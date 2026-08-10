@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test
+        run: cargo test -p resvg-mobile
+      - name: Release build (size check)
+        run: |
+          cargo build -p resvg-mobile --release
+          ls -lh target/release/libuniffi_resvg_mobile.* || ls -lh target/release/*.rlib
+      - name: Generate bindings
+        run: |
+          cargo run -p resvg-mobile --bin uniffi-bindgen -- generate \
+            resvg-mobile/src/resvg_mobile.udl --language kotlin \
+            --config resvg-mobile/uniffi.toml \
+            --out-dir /tmp/kt --no-format
+          cargo run -p resvg-mobile --bin uniffi-bindgen -- generate \
+            resvg-mobile/src/resvg_mobile.udl --language swift \
+            --config resvg-mobile/uniffi.toml \
+            --out-dir /tmp/swift
+
+  android:
+    runs-on: ubuntu-latest
+    needs: rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r27c
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+      - name: Build native libs
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          cd rust
+          cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 \
+            -o ../android/resvg-mobile/src/main/jniLibs \
+            build -p resvg-mobile --release
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Assemble AAR
+        working-directory: android
+        run: |
+          chmod +x gradlew || true
+          if [[ ! -f gradlew ]]; then
+            gradle wrapper --gradle-version 8.11.1
+          fi
+          ./gradlew :resvg-mobile:assembleRelease :resvg-mobile-ui:assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-aars
+          path: |
+            android/resvg-mobile/build/outputs/aar/*.aar
+            android/resvg-mobile-ui/build/outputs/aar/*.aar
+
+  ios:
+    runs-on: macos-14
+    needs: rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
+      - name: Build XCFramework
+        run: ./rust/build-ios.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-xcframework
+          path: ios/ResvgMobileFFI.xcframework

@@ -1,0 +1,30 @@
+# Rust
+rust/target/
+
+# iOS
+ios/.build/
+ios/ResvgMobileFFI/
+**/*.xcuserdata
+**/DerivedData/
+**/*.xcuserstate
+# Built XCFramework binaries (keep Info.plist + BUILD.md tracked)
+ios/ResvgMobileFFI.xcframework/**/*.a
+ios/ResvgMobileFFI.xcframework/**/*.dylib
+ios/ResvgMobileFFI.xcframework/*/Headers/
+ios/ResvgMobileFFI.xcframework/*-simulator/
+ios/ResvgMobileFFI.xcframework/ios-arm64/
+
+# Android
+android/.gradle/
+android/**/build/
+android/local.properties
+android/resvg-mobile/src/main/jniLibs/
+android/.idea/
+android/captures/
+
+# IDE / OS
+.DS_Store
+.idea/
+*.iml
+*.swp
+.vscode/

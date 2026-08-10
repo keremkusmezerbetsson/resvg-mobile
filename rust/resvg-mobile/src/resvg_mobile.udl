@@ -1,0 +1,51 @@
+namespace resvg_mobile {
+  [Throws=ResvgError]
+  RenderedImage render([ByRef] bytes svg, RenderOptions options);
+
+  [Throws=ResvgError]
+  RenderedImage render_with_fonts([ByRef] bytes svg, RenderOptions options, sequence<string> font_dirs);
+
+  [Throws=ResvgError]
+  SizeF intrinsic_size([ByRef] bytes svg);
+};
+
+enum FitMode {
+  "Contain",
+  "Cover",
+  "Fill",
+  "Intrinsic",
+};
+
+dictionary Rgba {
+  u8 r;
+  u8 g;
+  u8 b;
+  u8 a;
+};
+
+dictionary RenderOptions {
+  u32? width;
+  u32? height;
+  FitMode fit;
+  Rgba? background;
+};
+
+dictionary RenderedImage {
+  u32 width;
+  u32 height;
+  // Straight (non-premultiplied) RGBA bytes, row-major.
+  bytes rgba;
+};
+
+dictionary SizeF {
+  f32 width;
+  f32 height;
+};
+
+[Error]
+enum ResvgError {
+  "Parse",
+  "Render",
+  "InvalidSize",
+  "Fonts",
+};

@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = ["resvg-mobile"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+authors = ["Kerem Kusmezer"]
+repository = "https://github.com/keremkusmezerbetsson/resvg-mobile"
+homepage = "https://github.com/keremkusmezerbetsson/resvg-mobile"
+readme = "../README.md"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "s"
+strip = "symbols"

@@ -1,0 +1,6 @@
+[bindings.kotlin]
+package_name = "com.resvg.mobile"
+cdylib_name = "uniffi_resvg_mobile"
+
+[bindings.swift]
+cdylib_name = "uniffi_resvg_mobile"
