@@ -1,5 +1,6 @@
 # Rust
 rust/target/
+rust/resvg-mobile/tests/suite/vendor/
 
 # iOS
 ios/.build/
@@ -7,20 +8,23 @@ ios/ResvgMobileFFI/
 **/*.xcuserdata
 **/DerivedData/
 **/*.xcuserstate
-# Built XCFramework binaries (keep Info.plist + BUILD.md tracked)
-ios/ResvgMobileFFI.xcframework/**/*.a
-ios/ResvgMobileFFI.xcframework/**/*.dylib
-ios/ResvgMobileFFI.xcframework/*/Headers/
-ios/ResvgMobileFFI.xcframework/*-simulator/
-ios/ResvgMobileFFI.xcframework/ios-arm64/
+# Built XCFramework (only BUILD.md is tracked)
+ios/ResvgMobileFFI.xcframework/**
+!ios/ResvgMobileFFI.xcframework/BUILD.md
 
 # Android
 android/.gradle/
 android/**/build/
 android/local.properties
 android/resvg-mobile/src/main/jniLibs/
+android/gallery/src/main/assets/resvg-suite/
+android/gallery/src/main/assets/suite-fonts/
 android/.idea/
 android/captures/
+
+# Gallery apps — full resvg-test-suite is synced via scripts/sync-gallery-svgs.sh
+examples/ios-gallery/ResvgGallery/resvg-suite/
+examples/ios-gallery/ResvgGallery/suite-fonts/
 
 # IDE / OS
 .DS_Store

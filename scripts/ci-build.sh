@@ -31,11 +31,13 @@ fi
 
 if [[ "${BUILD_ANDROID:-0}" == "1" ]]; then
   echo "==> Android AAR (requires NDK + cargo-ndk)"
-  if command -v cargo-ndk >/dev/null; then
-    cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 \
-      -o "$ROOT/android/resvg-mobile/src/main/jniLibs" \
-      build -p resvg-mobile --release
+  if ! command -v cargo-ndk >/dev/null; then
+    echo "error: cargo-ndk is required when BUILD_ANDROID=1" >&2
+    exit 1
   fi
+  cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 \
+    -o "$ROOT/android/resvg-mobile/src/main/jniLibs" \
+    build -p resvg-mobile --release
   (cd "$ROOT/android" && ./gradlew :resvg-mobile:assembleRelease :resvg-mobile-ui:assembleRelease)
 fi
 

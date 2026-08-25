@@ -18,3 +18,4 @@ rootProject.name = "resvg-mobile"
 include(":resvg-mobile")
 include(":resvg-mobile-ui")
 include(":demo")
+include(":gallery")

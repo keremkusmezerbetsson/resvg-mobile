@@ -66,7 +66,7 @@ publishing {
                 }
                 scm {
                     connection.set("scm:git:git://github.com/keremkusmezerbetsson/resvg-mobile.git")
-                    developerConnection.set("scm:git:ssh://github.com:keremkusmezerbetsson/resvg-mobile.git")
+                    developerConnection.set("scm:git:ssh://git@github.com/keremkusmezerbetsson/resvg-mobile.git")
                     url.set("https://github.com/keremkusmezerbetsson/resvg-mobile")
                 }
             }
@@ -74,7 +74,19 @@ publishing {
     }
 }
 
-// Build Rust cdylib for Android ABIs via cargo-ndk when available.
+fun hasCargoNdk(): Boolean = try {
+    providers.exec { commandLine("cargo", "ndk", "--version") }.result.get().exitValue == 0
+} catch (_: Exception) {
+    false
+}
+
+fun jniLibsPresent(): Boolean {
+    val root = file("src/main/jniLibs")
+    if (!root.isDirectory) return false
+    return root.walkTopDown().any { it.isFile && it.extension == "so" }
+}
+
+// Build Rust cdylib for Android ABIs via cargo-ndk.
 tasks.register<Exec>("cargoNdkBuild") {
     workingDir = file("../../rust")
     commandLine(
@@ -86,15 +98,25 @@ tasks.register<Exec>("cargoNdkBuild") {
         "build", "-p", "resvg-mobile", "--release"
     )
     isIgnoreExitValue = false
-    onlyIf {
-        try {
-            providers.exec { commandLine("cargo", "ndk", "--version") }.result.get().exitValue == 0
-        } catch (_: Exception) {
-            false
+    onlyIf { hasCargoNdk() }
+}
+
+tasks.register("verifyJniLibs") {
+    doLast {
+        if (!jniLibsPresent()) {
+            throw GradleException(
+                "Missing libuniffi_resvg_mobile.so under src/main/jniLibs. " +
+                    "Install cargo-ndk and rebuild, or place prebuilt ABIs before assembling.",
+            )
         }
     }
 }
 
+tasks.named("verifyJniLibs").configure {
+    mustRunAfter("cargoNdkBuild")
+}
+
 tasks.named("preBuild").configure {
     dependsOn("cargoNdkBuild")
+    dependsOn("verifyJniLibs")
 }

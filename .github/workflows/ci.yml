@@ -14,13 +14,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Fetch SVG test suite
+        run: |
+          chmod +x ../scripts/fetch-test-suite.sh
+          ../scripts/fetch-test-suite.sh
       - name: Test
         run: cargo test -p resvg-mobile
       - name: Release build (size check)
         run: |
           cargo build -p resvg-mobile --release
           ls -lh target/release/libuniffi_resvg_mobile.* || ls -lh target/release/*.rlib
-      - name: Generate bindings
+      - name: Generate bindings and check drift
         run: |
           cargo run -p resvg-mobile --bin uniffi-bindgen -- generate \
             resvg-mobile/src/resvg_mobile.udl --language kotlin \
@@ -30,6 +34,17 @@ jobs:
             resvg-mobile/src/resvg_mobile.udl --language swift \
             --config resvg-mobile/uniffi.toml \
             --out-dir /tmp/swift
+          # Compare against committed bindings (ignore generator banner wording).
+          diff -u ../android/resvg-mobile/src/main/java/com/resvg/mobile/resvg_mobile.kt \
+            /tmp/kt/com/resvg/mobile/resvg_mobile.kt || {
+              echo "::error::Kotlin UniFFI bindings are out of date; regenerate and commit."
+              exit 1
+            }
+          diff -u ../ios/Sources/ResvgMobile/Generated/resvg_mobile.swift \
+            /tmp/swift/resvg_mobile.swift || {
+              echo "::error::Swift UniFFI bindings are out of date; regenerate and commit."
+              exit 1
+            }
 
   android:
     runs-on: ubuntu-latest
@@ -57,20 +72,19 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - name: Assemble AAR
+      - name: Assemble AAR + demo
         working-directory: android
         run: |
-          chmod +x gradlew || true
-          if [[ ! -f gradlew ]]; then
-            gradle wrapper --gradle-version 8.11.1
-          fi
-          ./gradlew :resvg-mobile:assembleRelease :resvg-mobile-ui:assembleRelease
+          chmod +x gradlew
+          ./gradlew :resvg-mobile:assembleRelease :resvg-mobile-ui:assembleRelease :demo:assembleDebug
       - uses: actions/upload-artifact@v4
         with:
           name: android-aars
           path: |
             android/resvg-mobile/build/outputs/aar/*.aar
             android/resvg-mobile-ui/build/outputs/aar/*.aar
+            NOTICE
+            LICENSE
 
   ios:
     runs-on: macos-14
@@ -82,7 +96,29 @@ jobs:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
       - name: Build XCFramework
         run: ./rust/build-ios.sh
+      - name: Compile Swift package
+        working-directory: ios
+        run: |
+          xcodebuild -scheme ResvgMobile \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/ResvgMobile-Package \
+            CODE_SIGNING_ALLOWED=NO build
+      - name: Compile iOS demo
+        working-directory: examples/ios-demo
+        run: |
+          xcodebuild -project ResvgDemo.xcodeproj -scheme ResvgDemo \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/ResvgDemo-DerivedData \
+            CODE_SIGNING_ALLOWED=NO build
+      - name: Package XCFramework zip
+        run: |
+          cd ios
+          ditto -c -k --keepParent ResvgMobileFFI.xcframework ResvgMobileFFI.xcframework.zip
+          cp ../NOTICE ../LICENSE .
       - uses: actions/upload-artifact@v4
         with:
           name: ios-xcframework
-          path: ios/ResvgMobileFFI.xcframework
+          path: |
+            ios/ResvgMobileFFI.xcframework.zip
+            ios/NOTICE
+            ios/LICENSE

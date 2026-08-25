@@ -9,7 +9,7 @@
 /* Begin PBXBuildFile section */
 		A10000000000000000000001 /* ResvgDemoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000011 /* ResvgDemoApp.swift */; };
 		A10000000000000000000002 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000012 /* Assets.xcassets */; };
-		A10000000000000000000003 /* ico.football-wc26_v4.svg in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000013 /* ico.football-wc26_v4.svg */; };
+		A10000000000000000000003 /* sample.svg in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000013 /* sample.svg */; };
 		A10000000000000000000004 /* ResvgMobile in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000021 /* ResvgMobile */; };
 		A10000000000000000000005 /* ResvgMobileUI in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000022 /* ResvgMobileUI */; };
 /* End PBXBuildFile section */
@@ -18,7 +18,7 @@
 		A10000000000000000000010 /* ResvgDemo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ResvgDemo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000011 /* ResvgDemoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResvgDemoApp.swift; sourceTree = "<group>"; };
 		A10000000000000000000012 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		A10000000000000000000013 /* ico.football-wc26_v4.svg */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = "ico.football-wc26_v4.svg"; sourceTree = "<group>"; };
+		A10000000000000000000013 /* sample.svg */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = sample.svg; sourceTree = "<group>"; };
 		A10000000000000000000014 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -48,7 +48,7 @@
 			children = (
 				A10000000000000000000011 /* ResvgDemoApp.swift */,
 				A10000000000000000000012 /* Assets.xcassets */,
-				A10000000000000000000013 /* ico.football-wc26_v4.svg */,
+				A10000000000000000000013 /* sample.svg */,
 				A10000000000000000000014 /* Info.plist */,
 			);
 			path = ResvgDemo;
@@ -123,7 +123,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000002 /* Assets.xcassets in Resources */,
-				A10000000000000000000003 /* ico.football-wc26_v4.svg in Resources */,
+				A10000000000000000000003 /* sample.svg in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -189,8 +189,8 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.resvg.mobile.demo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphonesimulator;
-				SUPPORTED_PLATFORMS = "iphonesimulator";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -215,8 +215,8 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.resvg.mobile.demo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphonesimulator;
-				SUPPORTED_PLATFORMS = "iphonesimulator";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;

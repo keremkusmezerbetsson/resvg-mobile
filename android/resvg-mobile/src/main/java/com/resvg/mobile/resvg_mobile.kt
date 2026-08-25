@@ -717,6 +717,8 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -735,6 +737,8 @@ internal interface IntegrityCheckingUniffiLib : Library {
     fun uniffi_uniffi_resvg_mobile_checksum_func_intrinsic_size(
 ): Short
 fun uniffi_uniffi_resvg_mobile_checksum_func_render(
+): Short
+fun uniffi_uniffi_resvg_mobile_checksum_func_render_with_font_config(
 ): Short
 fun uniffi_uniffi_resvg_mobile_checksum_func_render_with_fonts(
 ): Short
@@ -786,6 +790,8 @@ internal interface UniffiLib : Library {
     fun uniffi_uniffi_resvg_mobile_fn_func_intrinsic_size(`svg`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_uniffi_resvg_mobile_fn_func_render(`svg`: RustBuffer.ByValue,`options`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_uniffi_resvg_mobile_fn_func_render_with_font_config(`svg`: RustBuffer.ByValue,`options`: RustBuffer.ByValue,`fonts`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_uniffi_resvg_mobile_fn_func_render_with_fonts(`svg`: RustBuffer.ByValue,`options`: RustBuffer.ByValue,`fontDirs`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -919,6 +925,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_uniffi_resvg_mobile_checksum_func_render() != 44576.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_uniffi_resvg_mobile_checksum_func_render_with_font_config() != 1902.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_uniffi_resvg_mobile_checksum_func_render_with_fonts() != 3619.toShort()) {
@@ -1145,6 +1154,78 @@ public object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
     override fun write(value: ByteArray, buf: ByteBuffer) {
         buf.putInt(value.size)
         buf.put(value)
+    }
+}
+
+
+
+data class FontAlias (
+    var `requested`: kotlin.String, 
+    var `replacement`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFontAlias: FfiConverterRustBuffer<FontAlias> {
+    override fun read(buf: ByteBuffer): FontAlias {
+        return FontAlias(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FontAlias) = (
+            FfiConverterString.allocationSize(value.`requested`) +
+            FfiConverterString.allocationSize(value.`replacement`)
+    )
+
+    override fun write(value: FontAlias, buf: ByteBuffer) {
+            FfiConverterString.write(value.`requested`, buf)
+            FfiConverterString.write(value.`replacement`, buf)
+    }
+}
+
+
+
+data class FontConfig (
+    var `dirs`: List<kotlin.String>, 
+    var `data`: List<kotlin.ByteArray>, 
+    var `aliases`: List<FontAlias>, 
+    var `defaultFamily`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFontConfig: FfiConverterRustBuffer<FontConfig> {
+    override fun read(buf: ByteBuffer): FontConfig {
+        return FontConfig(
+            FfiConverterSequenceString.read(buf),
+            FfiConverterSequenceByteArray.read(buf),
+            FfiConverterSequenceTypeFontAlias.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FontConfig) = (
+            FfiConverterSequenceString.allocationSize(value.`dirs`) +
+            FfiConverterSequenceByteArray.allocationSize(value.`data`) +
+            FfiConverterSequenceTypeFontAlias.allocationSize(value.`aliases`) +
+            FfiConverterOptionalString.allocationSize(value.`defaultFamily`)
+    )
+
+    override fun write(value: FontConfig, buf: ByteBuffer) {
+            FfiConverterSequenceString.write(value.`dirs`, buf)
+            FfiConverterSequenceByteArray.write(value.`data`, buf)
+            FfiConverterSequenceTypeFontAlias.write(value.`aliases`, buf)
+            FfiConverterOptionalString.write(value.`defaultFamily`, buf)
     }
 }
 
@@ -1429,6 +1510,38 @@ public object FfiConverterOptionalUInt: FfiConverterRustBuffer<kotlin.UInt?> {
 /**
  * @suppress
  */
+public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?> {
+    override fun read(buf: ByteBuffer): kotlin.String? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterString.read(buf)
+    }
+
+    override fun allocationSize(value: kotlin.String?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterString.allocationSize(value)
+        }
+    }
+
+    override fun write(value: kotlin.String?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterString.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeRgba: FfiConverterRustBuffer<Rgba?> {
     override fun read(buf: ByteBuffer): Rgba? {
         if (buf.get().toInt() == 0) {
@@ -1482,6 +1595,62 @@ public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.Str
         }
     }
 }
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceByteArray: FfiConverterRustBuffer<List<kotlin.ByteArray>> {
+    override fun read(buf: ByteBuffer): List<kotlin.ByteArray> {
+        val len = buf.getInt()
+        return List<kotlin.ByteArray>(len) {
+            FfiConverterByteArray.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.ByteArray>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterByteArray.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.ByteArray>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterByteArray.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFontAlias: FfiConverterRustBuffer<List<FontAlias>> {
+    override fun read(buf: ByteBuffer): List<FontAlias> {
+        val len = buf.getInt()
+        return List<FontAlias>(len) {
+            FfiConverterTypeFontAlias.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FontAlias>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFontAlias.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FontAlias>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFontAlias.write(it, buf)
+        }
+    }
+}
     @Throws(ResvgException::class) fun `intrinsicSize`(`svg`: kotlin.ByteArray): SizeF {
             return FfiConverterTypeSizeF.lift(
     uniffiRustCallWithError(ResvgException) { _status ->
@@ -1497,6 +1666,16 @@ public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.Str
     uniffiRustCallWithError(ResvgException) { _status ->
     UniffiLib.INSTANCE.uniffi_uniffi_resvg_mobile_fn_func_render(
         FfiConverterByteArray.lower(`svg`),FfiConverterTypeRenderOptions.lower(`options`),_status)
+}
+    )
+    }
+    
+
+    @Throws(ResvgException::class) fun `renderWithFontConfig`(`svg`: kotlin.ByteArray, `options`: RenderOptions, `fonts`: FontConfig): RenderedImage {
+            return FfiConverterTypeRenderedImage.lift(
+    uniffiRustCallWithError(ResvgException) { _status ->
+    UniffiLib.INSTANCE.uniffi_uniffi_resvg_mobile_fn_func_render_with_font_config(
+        FfiConverterByteArray.lower(`svg`),FfiConverterTypeRenderOptions.lower(`options`),FfiConverterTypeFontConfig.lower(`fonts`),_status)
 }
     )
     }

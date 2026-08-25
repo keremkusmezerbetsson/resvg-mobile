@@ -6,6 +6,9 @@ namespace resvg_mobile {
   RenderedImage render_with_fonts([ByRef] bytes svg, RenderOptions options, sequence<string> font_dirs);
 
   [Throws=ResvgError]
+  RenderedImage render_with_font_config([ByRef] bytes svg, RenderOptions options, FontConfig fonts);
+
+  [Throws=ResvgError]
   SizeF intrinsic_size([ByRef] bytes svg);
 };
 
@@ -28,6 +31,18 @@ dictionary RenderOptions {
   u32? height;
   FitMode fit;
   Rgba? background;
+};
+
+dictionary FontAlias {
+  string requested;
+  string replacement;
+};
+
+dictionary FontConfig {
+  sequence<string> dirs;
+  sequence<bytes> data;
+  sequence<FontAlias> aliases;
+  string? default_family;
 };
 
 dictionary RenderedImage {

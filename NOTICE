@@ -1,11 +1,11 @@
 resvg-mobile
 Copyright 2026 Kerem Kusmezer
 
-This product includes software developed at / contributions to the
+This product includes software developed by contributors to the
 resvg-mobile project.
 
-This product bundles or depends on third-party software. Licenses for
-those components are available from their upstream projects:
+This product depends on third-party software. Licenses for those components
+are available from their upstream projects:
 
   resvg / usvg
     https://github.com/linebender/resvg
@@ -13,12 +13,18 @@ those components are available from their upstream projects:
 
   tiny-skia
     https://github.com/linebender/tiny-skia
-    License: BSD-2-Clause
+    License: BSD-3-Clause
 
   UniFFI
     https://github.com/mozilla/uniffi-rs
     License: MPL-2.0
+    Note: UniFFI-generated bindings and scaffolding are subject to MPL-2.0.
+    Source for UniFFI itself is available at the URL above.
 
   Java Native Access (JNA) — Android runtime dependency
     https://github.com/java-native-access/jna
     License: Apache-2.0 OR LGPL-2.1-or-later
+
+When redistributing binary artifacts (AAR / XCFramework), include this NOTICE
+file and the applicable third-party license texts (for BSD-3-Clause that means
+the copyright notice and redistribution conditions from upstream).

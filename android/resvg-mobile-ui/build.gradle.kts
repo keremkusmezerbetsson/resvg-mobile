@@ -69,7 +69,7 @@ publishing {
                 }
                 scm {
                     connection.set("scm:git:git://github.com/keremkusmezerbetsson/resvg-mobile.git")
-                    developerConnection.set("scm:git:ssh://github.com:keremkusmezerbetsson/resvg-mobile.git")
+                    developerConnection.set("scm:git:ssh://git@github.com/keremkusmezerbetsson/resvg-mobile.git")
                     url.set("https://github.com/keremkusmezerbetsson/resvg-mobile")
                 }
             }

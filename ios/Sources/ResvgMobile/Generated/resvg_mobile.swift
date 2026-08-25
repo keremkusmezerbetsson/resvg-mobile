@@ -505,6 +505,162 @@ fileprivate struct FfiConverterData: FfiConverterRustBuffer {
 }
 
 
+public struct FontAlias {
+    public var requested: String
+    public var replacement: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(requested: String, replacement: String) {
+        self.requested = requested
+        self.replacement = replacement
+    }
+}
+
+#if compiler(>=6)
+extension FontAlias: Sendable {}
+#endif
+
+
+extension FontAlias: Equatable, Hashable {
+    public static func ==(lhs: FontAlias, rhs: FontAlias) -> Bool {
+        if lhs.requested != rhs.requested {
+            return false
+        }
+        if lhs.replacement != rhs.replacement {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(requested)
+        hasher.combine(replacement)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFontAlias: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FontAlias {
+        return
+            try FontAlias(
+                requested: FfiConverterString.read(from: &buf), 
+                replacement: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FontAlias, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.requested, into: &buf)
+        FfiConverterString.write(value.replacement, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFontAlias_lift(_ buf: RustBuffer) throws -> FontAlias {
+    return try FfiConverterTypeFontAlias.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFontAlias_lower(_ value: FontAlias) -> RustBuffer {
+    return FfiConverterTypeFontAlias.lower(value)
+}
+
+
+public struct FontConfig {
+    public var dirs: [String]
+    public var data: [Data]
+    public var aliases: [FontAlias]
+    public var defaultFamily: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(dirs: [String], data: [Data], aliases: [FontAlias], defaultFamily: String?) {
+        self.dirs = dirs
+        self.data = data
+        self.aliases = aliases
+        self.defaultFamily = defaultFamily
+    }
+}
+
+#if compiler(>=6)
+extension FontConfig: Sendable {}
+#endif
+
+
+extension FontConfig: Equatable, Hashable {
+    public static func ==(lhs: FontConfig, rhs: FontConfig) -> Bool {
+        if lhs.dirs != rhs.dirs {
+            return false
+        }
+        if lhs.data != rhs.data {
+            return false
+        }
+        if lhs.aliases != rhs.aliases {
+            return false
+        }
+        if lhs.defaultFamily != rhs.defaultFamily {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(dirs)
+        hasher.combine(data)
+        hasher.combine(aliases)
+        hasher.combine(defaultFamily)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFontConfig: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FontConfig {
+        return
+            try FontConfig(
+                dirs: FfiConverterSequenceString.read(from: &buf), 
+                data: FfiConverterSequenceData.read(from: &buf), 
+                aliases: FfiConverterSequenceTypeFontAlias.read(from: &buf), 
+                defaultFamily: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FontConfig, into buf: inout [UInt8]) {
+        FfiConverterSequenceString.write(value.dirs, into: &buf)
+        FfiConverterSequenceData.write(value.data, into: &buf)
+        FfiConverterSequenceTypeFontAlias.write(value.aliases, into: &buf)
+        FfiConverterOptionString.write(value.defaultFamily, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFontConfig_lift(_ buf: RustBuffer) throws -> FontConfig {
+    return try FfiConverterTypeFontConfig.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFontConfig_lower(_ value: FontConfig) -> RustBuffer {
+    return FfiConverterTypeFontConfig.lower(value)
+}
+
+
 public struct RenderOptions {
     public var width: UInt32?
     public var height: UInt32?
@@ -1035,6 +1191,30 @@ fileprivate struct FfiConverterOptionUInt32: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
+    typealias SwiftType = String?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterString.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterString.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeRgba: FfiConverterRustBuffer {
     typealias SwiftType = Rgba?
 
@@ -1080,6 +1260,56 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
         return seq
     }
 }
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceData: FfiConverterRustBuffer {
+    typealias SwiftType = [Data]
+
+    public static func write(_ value: [Data], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterData.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Data] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Data]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterData.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeFontAlias: FfiConverterRustBuffer {
+    typealias SwiftType = [FontAlias]
+
+    public static func write(_ value: [FontAlias], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeFontAlias.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [FontAlias] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [FontAlias]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeFontAlias.read(from: &buf))
+        }
+        return seq
+    }
+}
 public func intrinsicSize(svg: Data)throws  -> SizeF  {
     return try  FfiConverterTypeSizeF_lift(try rustCallWithError(FfiConverterTypeResvgError_lift) {
     uniffi_uniffi_resvg_mobile_fn_func_intrinsic_size(
@@ -1092,6 +1322,15 @@ public func render(svg: Data, options: RenderOptions)throws  -> RenderedImage  {
     uniffi_uniffi_resvg_mobile_fn_func_render(
         FfiConverterData.lower(svg),
         FfiConverterTypeRenderOptions_lower(options),$0
+    )
+})
+}
+public func renderWithFontConfig(svg: Data, options: RenderOptions, fonts: FontConfig)throws  -> RenderedImage  {
+    return try  FfiConverterTypeRenderedImage_lift(try rustCallWithError(FfiConverterTypeResvgError_lift) {
+    uniffi_uniffi_resvg_mobile_fn_func_render_with_font_config(
+        FfiConverterData.lower(svg),
+        FfiConverterTypeRenderOptions_lower(options),
+        FfiConverterTypeFontConfig_lower(fonts),$0
     )
 })
 }
@@ -1124,6 +1363,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_uniffi_resvg_mobile_checksum_func_render() != 44576) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_uniffi_resvg_mobile_checksum_func_render_with_font_config() != 1902) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_uniffi_resvg_mobile_checksum_func_render_with_fonts() != 3619) {

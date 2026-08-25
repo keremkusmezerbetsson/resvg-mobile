@@ -3,6 +3,9 @@ name = "resvg-mobile"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
 description = "Cross-platform SVG rasterizer for Android and iOS (resvg + UniFFI)"
 publish = false
 

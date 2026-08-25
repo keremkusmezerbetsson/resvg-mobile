@@ -24,7 +24,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             val svg = remember {
-                assets.open("ico.football-wc26_v4.svg").use { it.readBytes() }
+                assets.open("sample.svg").use { it.readBytes() }
             }
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0F172A)) {
@@ -36,12 +36,12 @@ class MainActivity : ComponentActivity() {
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text(
-                            text = "WC26 football icon (resvg)",
+                            text = "resvg-mobile demo",
                             color = Color.White,
                             style = MaterialTheme.typography.titleMedium,
                         )
                         Text(
-                            text = "ico.football-wc26_v4.svg",
+                            text = "sample.svg",
                             color = Color(0xFF94A3B8),
                             modifier = Modifier.padding(top = 8.dp, bottom = 24.dp),
                         )
@@ -51,7 +51,7 @@ class MainActivity : ComponentActivity() {
                                 .size(192.dp)
                                 .background(Color(0xFF1E293B))
                                 .padding(24.dp),
-                            contentDescription = "Football WC26 icon",
+                            contentDescription = "Sample SVG",
                         )
                     }
                 }

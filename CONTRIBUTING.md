@@ -9,9 +9,11 @@ under the Apache License, Version 2.0 (see `LICENSE` and `NOTICE`).
 
 ## Development
 
+Run commands from the **repository root** unless noted:
+
 ```bash
 # Rust unit + golden tests
-cd rust && cargo test -p resvg-mobile
+(cd rust && cargo test -p resvg-mobile)
 
 # Regenerate UniFFI bindings (and optionally mobile packages)
 ./scripts/ci-build.sh
@@ -28,4 +30,4 @@ rather than hand-editing generated files.
 
 - Prefer small, focused PRs.
 - Include a short description of *why* the change is needed.
-- Run `cargo test -p resvg-mobile` before opening the PR.
+- Run `(cd rust && cargo test -p resvg-mobile)` before opening the PR.

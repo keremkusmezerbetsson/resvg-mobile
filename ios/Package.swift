@@ -6,13 +6,15 @@ let package = Package(
     name: "ResvgMobile",
     platforms: [
         .iOS(.v15),
-        .macOS(.v12),
     ],
     products: [
         .library(name: "ResvgMobile", targets: ["ResvgMobile"]),
         .library(name: "ResvgMobileUI", targets: ["ResvgMobileUI"]),
     ],
     targets: [
+        // Local XCFramework produced by `./rust/build-ios.sh`.
+        // GitHub consumers: run that script after clone, or use a Release zip
+        // (see README / ios/ResvgMobileFFI.xcframework/BUILD.md).
         .binaryTarget(
             name: "resvg_mobileFFI",
             path: "ResvgMobileFFI.xcframework"

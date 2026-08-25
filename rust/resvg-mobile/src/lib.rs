@@ -3,15 +3,26 @@
 //! Pixel format: **straight (non-premultiplied) RGBA**, row-major.
 //! Callers should convert on the platform side (`UIImage` / `Bitmap`).
 
-use std::path::PathBuf;
+use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use tiny_skia::{Pixmap, Transform};
-use usvg::{Options as UsvgOptions, Tree};
+use usvg::fontdb::{self, Database as FontDatabase};
+use usvg::{
+    FontFamily, FontResolver, FontStretch, FontStyle, Options as UsvgOptions, Tree,
+};
 
 uniffi::include_scaffolding!("resvg_mobile");
 
-/// Hard cap on either output dimension to avoid OOM on pathological SVGs.
+/// Hard cap on either output dimension.
 pub const MAX_DIMENSION: u32 = 8192;
+
+/// Hard cap on total output pixels (`width * height`) to bound peak memory.
+/// At 4 bytes/pixel this is ~16 MiB for the pixmap alone.
+pub const MAX_PIXELS: u32 = 4_194_304; // 2048²
 
 /// How to map the SVG into the requested pixel box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,7 +33,9 @@ pub enum FitMode {
     Cover,
     /// Stretch to exact width×height.
     Fill,
-    /// Use SVG intrinsic size (ignore width/height unless one axis is set).
+    /// Use SVG intrinsic size when neither axis is set; if exactly one axis is
+    /// set, derive the other while preserving aspect ratio. When both axes are
+    /// set they are ignored (same as neither).
     Intrinsic,
 }
 
@@ -67,6 +80,22 @@ pub struct SizeF {
     pub height: f32,
 }
 
+/// Map an SVG `font-family` name to a face actually present in the font set.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FontAlias {
+    pub requested: String,
+    pub replacement: String,
+}
+
+/// Fonts to load for a render: directories, raw TTF/OTF/TTC bytes, and aliases.
+#[derive(Debug, Clone, Default)]
+pub struct FontConfig {
+    pub dirs: Vec<String>,
+    pub data: Vec<Vec<u8>>,
+    pub aliases: Vec<FontAlias>,
+    pub default_family: Option<String>,
+}
+
 #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
 pub enum ResvgError {
     #[error("failed to parse SVG")]
@@ -79,25 +108,214 @@ pub enum ResvgError {
     Fonts,
 }
 
-fn usvg_options(font_dirs: &[String]) -> UsvgOptions<'static> {
-    let mut opt = UsvgOptions::default();
-    for dir in font_dirs {
-        let path = PathBuf::from(dir);
-        if path.is_dir() {
-            opt.fontdb_mut().load_fonts_dir(&path);
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct FontDbKey {
+    dirs: Vec<String>,
+    data_hashes: Vec<u64>,
+}
+
+fn font_db_cache() -> &'static Mutex<HashMap<FontDbKey, Arc<FontDatabase>>> {
+    static CACHE: OnceLock<Mutex<HashMap<FontDbKey, Arc<FontDatabase>>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn hash_bytes(data: &[u8]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    data.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn font_db_key(fonts: &FontConfig) -> FontDbKey {
+    let mut dirs: Vec<String> = fonts
+        .dirs
+        .iter()
+        .filter(|dir| Path::new(dir.as_str()).is_dir())
+        .cloned()
+        .collect();
+    dirs.sort();
+    dirs.dedup();
+    let data_hashes = fonts.data.iter().map(|blob| hash_bytes(blob)).collect();
+    FontDbKey { dirs, data_hashes }
+}
+
+fn configure_generic_families(db: &mut FontDatabase) {
+    // Match resvg-test-suite fonts when present; names are stored even if missing.
+    db.set_sans_serif_family("Noto Sans");
+    db.set_serif_family("Noto Serif");
+    db.set_monospace_family("Noto Mono");
+    db.set_cursive_family("Yellowtail");
+    db.set_fantasy_family("Sedgwick Ave Display");
+}
+
+fn normalize_family(name: &str) -> String {
+    name.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase()
+}
+
+fn alias_map(aliases: &[FontAlias]) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for alias in aliases {
+        let from = normalize_family(&alias.requested);
+        let to = alias.replacement.trim();
+        if !from.is_empty() && !to.is_empty() {
+            map.insert(from, to.to_string());
         }
+    }
+    map
+}
+
+fn stretch_to_fontdb(stretch: FontStretch) -> fontdb::Stretch {
+    match stretch {
+        FontStretch::UltraCondensed => fontdb::Stretch::UltraCondensed,
+        FontStretch::ExtraCondensed => fontdb::Stretch::ExtraCondensed,
+        FontStretch::Condensed => fontdb::Stretch::Condensed,
+        FontStretch::SemiCondensed => fontdb::Stretch::SemiCondensed,
+        FontStretch::Normal => fontdb::Stretch::Normal,
+        FontStretch::SemiExpanded => fontdb::Stretch::SemiExpanded,
+        FontStretch::Expanded => fontdb::Stretch::Expanded,
+        FontStretch::ExtraExpanded => fontdb::Stretch::ExtraExpanded,
+        FontStretch::UltraExpanded => fontdb::Stretch::UltraExpanded,
+    }
+}
+
+fn style_to_fontdb(style: FontStyle) -> fontdb::Style {
+    match style {
+        FontStyle::Normal => fontdb::Style::Normal,
+        FontStyle::Italic => fontdb::Style::Italic,
+        FontStyle::Oblique => fontdb::Style::Oblique,
+    }
+}
+
+fn aliased_font_selector(
+    aliases: Arc<HashMap<String, String>>,
+) -> usvg::FontSelectionFn<'static> {
+    Box::new(move |font, db| {
+        let mut named: Vec<String> = Vec::new();
+        let mut generics: Vec<fontdb::Family<'_>> = Vec::new();
+
+        for family in font.families() {
+            match family {
+                FontFamily::Named(name) => {
+                    if let Some(replacement) = aliases.get(&normalize_family(name)) {
+                        named.push(replacement.clone());
+                    }
+                    named.push(name.clone());
+                }
+                FontFamily::Serif => {
+                    if let Some(replacement) = aliases.get("serif") {
+                        named.push(replacement.clone());
+                    }
+                    generics.push(fontdb::Family::Serif);
+                }
+                FontFamily::SansSerif => {
+                    if let Some(replacement) = aliases.get("sans-serif") {
+                        named.push(replacement.clone());
+                    }
+                    generics.push(fontdb::Family::SansSerif);
+                }
+                FontFamily::Cursive => {
+                    if let Some(replacement) = aliases.get("cursive") {
+                        named.push(replacement.clone());
+                    }
+                    generics.push(fontdb::Family::Cursive);
+                }
+                FontFamily::Fantasy => {
+                    if let Some(replacement) = aliases.get("fantasy") {
+                        named.push(replacement.clone());
+                    }
+                    generics.push(fontdb::Family::Fantasy);
+                }
+                FontFamily::Monospace => {
+                    if let Some(replacement) = aliases.get("monospace") {
+                        named.push(replacement.clone());
+                    }
+                    generics.push(fontdb::Family::Monospace);
+                }
+            }
+        }
+
+        let mut families: Vec<fontdb::Family<'_>> = named
+            .iter()
+            .map(|name| fontdb::Family::Name(name.as_str()))
+            .collect();
+        families.extend(generics);
+        families.push(fontdb::Family::Serif);
+
+        let query = fontdb::Query {
+            families: &families,
+            weight: fontdb::Weight(font.weight()),
+            stretch: stretch_to_fontdb(font.stretch()),
+            style: style_to_fontdb(font.style()),
+        };
+        db.query(&query)
+    })
+}
+
+fn load_font_database(fonts: &FontConfig) -> Arc<FontDatabase> {
+    let key = font_db_key(fonts);
+    {
+        let cache = font_db_cache().lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(existing) = cache.get(&key) {
+            return existing.clone();
+        }
+    }
+
+    let mut db = FontDatabase::new();
+    for dir in &key.dirs {
+        db.load_fonts_dir(Path::new(dir));
+    }
+    for blob in &fonts.data {
+        db.load_font_data(blob.clone());
+    }
+    configure_generic_families(&mut db);
+    let loaded = Arc::new(db);
+
+    let mut cache = font_db_cache().lock().unwrap_or_else(|e| e.into_inner());
+    cache.entry(key).or_insert_with(|| loaded.clone()).clone()
+}
+
+fn usvg_options(fonts: &FontConfig) -> UsvgOptions<'static> {
+    let mut opt = UsvgOptions::default();
+    opt.fontdb = load_font_database(fonts);
+    if let Some(family) = fonts
+        .default_family
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        opt.font_family = family.to_string();
+    } else if key_has_faces(&font_db_key(fonts)) {
+        opt.font_family = "Noto Sans".into();
+    }
+
+    if !fonts.aliases.is_empty() {
+        opt.font_resolver = FontResolver {
+            select_font: aliased_font_selector(Arc::new(alias_map(&fonts.aliases))),
+            select_fallback: FontResolver::default_fallback_selector(),
+        };
     }
     opt
 }
 
-fn parse_tree(svg: &[u8], font_dirs: &[String]) -> Result<Tree, ResvgError> {
-    let opt = usvg_options(font_dirs);
+fn key_has_faces(key: &FontDbKey) -> bool {
+    !key.dirs.is_empty() || !key.data_hashes.is_empty()
+}
+
+fn parse_tree(
+    svg: &[u8],
+    fonts: &FontConfig,
+    resources_dir: Option<PathBuf>,
+) -> Result<Tree, ResvgError> {
+    let mut opt = usvg_options(fonts);
+    opt.resources_dir = resources_dir;
     Tree::from_data(svg, &opt).map_err(|_| ResvgError::Parse)
 }
 
 /// Intrinsic SVG size in user units (CSS pixels).
 pub fn intrinsic_size(svg: &[u8]) -> Result<SizeF, ResvgError> {
-    let tree = parse_tree(svg, &[])?;
+    let tree = parse_tree(svg, &FontConfig::default(), None)?;
     let size = tree.size();
     Ok(SizeF {
         width: size.width(),
@@ -106,7 +324,7 @@ pub fn intrinsic_size(svg: &[u8]) -> Result<SizeF, ResvgError> {
 }
 
 pub fn render(svg: &[u8], options: RenderOptions) -> Result<RenderedImage, ResvgError> {
-    render_with_fonts(svg, options, Vec::new())
+    render_with_font_config(svg, options, FontConfig::default())
 }
 
 pub fn render_with_fonts(
@@ -114,8 +332,55 @@ pub fn render_with_fonts(
     options: RenderOptions,
     font_dirs: Vec<String>,
 ) -> Result<RenderedImage, ResvgError> {
-    let tree = parse_tree(svg, &font_dirs)?;
-    let (out_w, out_h, transform) = compute_layout(&tree, &options)?;
+    render_with_font_config(
+        svg,
+        options,
+        FontConfig {
+            dirs: font_dirs,
+            ..FontConfig::default()
+        },
+    )
+}
+
+pub fn render_with_font_config(
+    svg: &[u8],
+    options: RenderOptions,
+    fonts: FontConfig,
+) -> Result<RenderedImage, ResvgError> {
+    let tree = parse_tree(svg, &fonts, None)?;
+    render_tree(&tree, options)
+}
+
+/// Render an SVG file, resolving relative resources (images, fonts) from its parent directory.
+pub fn render_file(
+    path: &Path,
+    options: RenderOptions,
+    font_dirs: Vec<String>,
+) -> Result<RenderedImage, ResvgError> {
+    let svg = std::fs::read(path).map_err(|_| ResvgError::Parse)?;
+    let resources_dir = path.parent().map(|p| p.to_path_buf());
+    let fonts = FontConfig {
+        dirs: font_dirs,
+        ..FontConfig::default()
+    };
+    let tree = parse_tree(&svg, &fonts, resources_dir)?;
+    render_tree(&tree, options)
+}
+
+/// Intrinsic size of an SVG file (with relative resource resolution from its parent directory).
+pub fn intrinsic_size_file(path: &Path) -> Result<SizeF, ResvgError> {
+    let svg = std::fs::read(path).map_err(|_| ResvgError::Parse)?;
+    let resources_dir = path.parent().map(|p| p.to_path_buf());
+    let tree = parse_tree(&svg, &FontConfig::default(), resources_dir)?;
+    let size = tree.size();
+    Ok(SizeF {
+        width: size.width(),
+        height: size.height(),
+    })
+}
+
+fn render_tree(tree: &Tree, options: RenderOptions) -> Result<RenderedImage, ResvgError> {
+    let (out_w, out_h, transform) = compute_layout(tree, &options)?;
 
     let mut pixmap = Pixmap::new(out_w, out_h).ok_or(ResvgError::InvalidSize)?;
 
@@ -124,7 +389,7 @@ pub fn render_with_fonts(
         pixmap.fill(color);
     }
 
-    resvg::render(&tree, transform, &mut pixmap.as_mut());
+    resvg::render(tree, transform, &mut pixmap.as_mut());
 
     // tiny-skia stores premultiplied RGBA; convert to straight for platform APIs.
     let rgba = premultiplied_to_straight(pixmap.data());
@@ -136,6 +401,17 @@ pub fn render_with_fonts(
     })
 }
 
+fn check_size(out_w: u32, out_h: u32) -> Result<(), ResvgError> {
+    if out_w == 0 || out_h == 0 || out_w > MAX_DIMENSION || out_h > MAX_DIMENSION {
+        return Err(ResvgError::InvalidSize);
+    }
+    let pixels = (out_w as u64).saturating_mul(out_h as u64);
+    if pixels > MAX_PIXELS as u64 {
+        return Err(ResvgError::InvalidSize);
+    }
+    Ok(())
+}
+
 fn compute_layout(
     tree: &Tree,
     options: &RenderOptions,
@@ -144,20 +420,22 @@ fn compute_layout(
     let svg_h = tree.size().height().max(1.0);
 
     let (out_w, out_h) = match options.fit {
-        FitMode::Intrinsic => {
-            if options.width.is_none() && options.height.is_some() {
-                let h = options.height.unwrap().max(1);
+        FitMode::Intrinsic => match (options.width, options.height) {
+            (None, None) | (Some(_), Some(_)) => {
+                // Both set → ignore and use intrinsic (matches API contract).
+                (svg_w.ceil() as u32, svg_h.ceil() as u32)
+            }
+            (Some(w), None) => {
+                let w = w.max(1);
+                let h = ((svg_h / svg_w) * w as f32).ceil() as u32;
+                (w, h.max(1))
+            }
+            (None, Some(h)) => {
+                let h = h.max(1);
                 let w = ((svg_w / svg_h) * h as f32).ceil() as u32;
                 (w.max(1), h)
-            } else {
-                let w = options.width.unwrap_or(svg_w.ceil() as u32).max(1);
-                let h = options
-                    .height
-                    .unwrap_or_else(|| ((svg_h / svg_w) * w as f32).ceil() as u32)
-                    .max(1);
-                (w, h)
             }
-        }
+        },
         FitMode::Contain | FitMode::Cover | FitMode::Fill => {
             let w = options.width.ok_or(ResvgError::InvalidSize)?.max(1);
             let h = options.height.ok_or(ResvgError::InvalidSize)?.max(1);
@@ -165,14 +443,18 @@ fn compute_layout(
         }
     };
 
-    if out_w > MAX_DIMENSION || out_h > MAX_DIMENSION {
-        return Err(ResvgError::InvalidSize);
-    }
+    check_size(out_w, out_h)?;
 
     let transform = match options.fit {
-        FitMode::Fill | FitMode::Intrinsic => {
+        FitMode::Fill => {
             let sx = out_w as f32 / svg_w;
             let sy = out_h as f32 / svg_h;
+            Transform::from_scale(sx, sy)
+        }
+        FitMode::Intrinsic => {
+            let sx = out_w as f32 / svg_w;
+            let sy = out_h as f32 / svg_h;
+            // Axes are aspect-preserving except when both were ignored → 1:1 scale.
             Transform::from_scale(sx, sy)
         }
         FitMode::Contain => {
@@ -257,6 +539,60 @@ mod tests {
     }
 
     #[test]
+    fn render_default_intrinsic_works() {
+        let img = render(CIRCLE_SVG, RenderOptions::default()).unwrap();
+        assert_eq!(img.width, 100);
+        assert_eq!(img.height, 100);
+    }
+
+    #[test]
+    fn intrinsic_ignores_both_axes() {
+        let img = render(
+            CIRCLE_SVG,
+            RenderOptions {
+                width: Some(50),
+                height: Some(200),
+                fit: FitMode::Intrinsic,
+                background: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(img.width, 100);
+        assert_eq!(img.height, 100);
+    }
+
+    #[test]
+    fn intrinsic_one_axis_preserves_aspect() {
+        let img = render(
+            CIRCLE_SVG,
+            RenderOptions {
+                width: Some(50),
+                height: None,
+                fit: FitMode::Intrinsic,
+                background: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(img.width, 50);
+        assert_eq!(img.height, 50);
+    }
+
+    #[test]
+    fn contain_requires_both_dimensions() {
+        let err = render(
+            CIRCLE_SVG,
+            RenderOptions {
+                width: None,
+                height: None,
+                fit: FitMode::Contain,
+                background: None,
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err, ResvgError::InvalidSize);
+    }
+
+    #[test]
     fn render_contain_produces_pixels() {
         let img = render(
             CIRCLE_SVG,
@@ -281,12 +617,30 @@ mod tests {
     }
 
     #[test]
-    fn rejects_oversized() {
+    fn rejects_oversized_edge() {
         let err = render(
             CIRCLE_SVG,
             RenderOptions {
                 width: Some(MAX_DIMENSION + 1),
-                height: Some(MAX_DIMENSION + 1),
+                height: Some(64),
+                fit: FitMode::Fill,
+                background: None,
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err, ResvgError::InvalidSize);
+    }
+
+    #[test]
+    fn rejects_oversized_area() {
+        // Within edge cap but over pixel budget.
+        let side = ((MAX_PIXELS as f64).sqrt().floor() as u32) + 1;
+        assert!(side <= MAX_DIMENSION);
+        let err = render(
+            CIRCLE_SVG,
+            RenderOptions {
+                width: Some(side),
+                height: Some(side),
                 fit: FitMode::Fill,
                 background: None,
             },
@@ -330,5 +684,146 @@ mod tests {
         } else {
             assert_eq!(digest, expected, "golden pixel hash changed");
         }
+    }
+
+    fn opaque_pixel_count(img: &RenderedImage) -> usize {
+        img.rgba.chunks_exact(4).filter(|px| px[3] > 0).count()
+    }
+
+    #[test]
+    fn text_is_skipped_without_fonts() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="80">
+            <text x="8" y="52" font-family="Noto Sans" font-size="36" fill="#111">Hello</text>
+        </svg>"##;
+        let img = render(
+            svg,
+            RenderOptions {
+                width: Some(200),
+                height: Some(80),
+                fit: FitMode::Fill,
+                background: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            opaque_pixel_count(&img),
+            0,
+            "text must not paint without a matching font"
+        );
+    }
+
+    #[test]
+    fn text_renders_with_suite_fonts() {
+        let fonts = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/suite/vendor/resvg-test-suite/fonts");
+        if !fonts.is_dir() {
+            eprintln!("skipping text_renders_with_suite_fonts — run ./scripts/fetch-test-suite.sh");
+            return;
+        }
+
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="80">
+            <text x="8" y="52" font-family="Noto Sans" font-size="36" fill="#111">Hello</text>
+        </svg>"##;
+        let img = render_with_fonts(
+            svg,
+            RenderOptions {
+                width: Some(200),
+                height: Some(80),
+                fit: FitMode::Fill,
+                background: None,
+            },
+            vec![fonts.to_string_lossy().into_owned()],
+        )
+        .unwrap();
+        assert!(
+            opaque_pixel_count(&img) > 200,
+            "expected painted glyphs after loading suite fonts, got {}",
+            opaque_pixel_count(&img)
+        );
+    }
+
+    fn suite_noto_regular() -> Option<Vec<u8>> {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/suite/vendor/resvg-test-suite/fonts/NotoSans-Regular.ttf");
+        std::fs::read(path).ok()
+    }
+
+    #[test]
+    fn text_renders_from_raw_font_bytes() {
+        let Some(font) = suite_noto_regular() else {
+            eprintln!("skipping text_renders_from_raw_font_bytes — run ./scripts/fetch-test-suite.sh");
+            return;
+        };
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="80">
+            <text x="8" y="52" font-family="Noto Sans" font-size="36" fill="#111">Hello</text>
+        </svg>"##;
+        let img = render_with_font_config(
+            svg,
+            RenderOptions {
+                width: Some(200),
+                height: Some(80),
+                fit: FitMode::Fill,
+                background: None,
+            },
+            FontConfig {
+                data: vec![font],
+                ..FontConfig::default()
+            },
+        )
+        .unwrap();
+        assert!(
+            opaque_pixel_count(&img) > 200,
+            "expected painted glyphs from raw font bytes, got {}",
+            opaque_pixel_count(&img)
+        );
+    }
+
+    #[test]
+    fn font_alias_maps_missing_family() {
+        let Some(font) = suite_noto_regular() else {
+            eprintln!("skipping font_alias_maps_missing_family — run ./scripts/fetch-test-suite.sh");
+            return;
+        };
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="80">
+            <text x="8" y="52" font-family="App Sans" font-size="36" fill="#111">Hello</text>
+        </svg>"##;
+        let without_alias = render_with_font_config(
+            svg,
+            RenderOptions {
+                width: Some(200),
+                height: Some(80),
+                fit: FitMode::Fill,
+                background: None,
+            },
+            FontConfig {
+                data: vec![font.clone()],
+                ..FontConfig::default()
+            },
+        )
+        .unwrap();
+        let with_alias = render_with_font_config(
+            svg,
+            RenderOptions {
+                width: Some(200),
+                height: Some(80),
+                fit: FitMode::Fill,
+                background: None,
+            },
+            FontConfig {
+                data: vec![font],
+                aliases: vec![FontAlias {
+                    requested: "App Sans".into(),
+                    replacement: "Noto Sans".into(),
+                }],
+                ..FontConfig::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(opaque_pixel_count(&without_alias), 0);
+        assert!(
+            opaque_pixel_count(&with_alias) > 200,
+            "alias should resolve App Sans to Noto Sans, got {}",
+            opaque_pixel_count(&with_alias)
+        );
     }
 }

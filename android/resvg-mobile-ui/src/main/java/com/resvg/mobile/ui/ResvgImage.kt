@@ -16,8 +16,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import com.resvg.mobile.FitMode
+import com.resvg.mobile.FontConfig
 import com.resvg.mobile.RenderOptions
 import com.resvg.mobile.Resvg
+import com.resvg.mobile.cacheSignature
+import com.resvg.mobile.emptyFontConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.max
@@ -30,16 +33,24 @@ fun ResvgImage(
     fit: FitMode = FitMode.CONTAIN,
     contentScale: ContentScale = ContentScale.Fit,
     contentDescription: String? = null,
+    fonts: FontConfig = emptyFontConfig,
 ) {
     var size by remember { mutableStateOf(IntSize.Zero) }
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+    val fontSig = fonts.cacheSignature()
 
-    LaunchedEffect(svg, size, fit) {
+    LaunchedEffect(svg, size, fit, fontSig) {
         if (size.width <= 0 || size.height <= 0) return@LaunchedEffect
         // onSizeChanged reports pixels already — do not multiply by density again.
-        val pixelW = max(1, min(size.width, 2048))
-        val pixelH = max(1, min(size.height, 2048))
-        val cacheKey = ResvgBitmapCache.key(svg.contentHashCode(), pixelW, pixelH, fit, 1f)
+        val pixelW = max(1, min(size.width, Resvg.UI_MAX_RENDER_EDGE))
+        val pixelH = max(1, min(size.height, Resvg.UI_MAX_RENDER_EDGE))
+        val cacheKey = ResvgBitmapCache.key(
+            ResvgBitmapCache.digest(svg),
+            pixelW,
+            pixelH,
+            fit,
+            fontSig,
+        )
         ResvgBitmapCache.get(cacheKey)?.let {
             bitmap = it
             return@LaunchedEffect
@@ -54,7 +65,7 @@ fun ResvgImage(
                         fit = fit,
                         background = null,
                     ),
-                    fontDirs = emptyList(),
+                    fonts,
                 )
             }.getOrNull()
         }
