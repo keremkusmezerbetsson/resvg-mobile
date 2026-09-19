@@ -13,6 +13,23 @@ android {
         consumerProguardFiles("consumer-rules.pro")
     }
 
+    flavorDimensions += "features"
+    productFlavors {
+        create("full") {
+            dimension = "features"
+            isDefault = true
+        }
+        create("noImages") {
+            dimension = "features"
+        }
+        create("noText") {
+            dimension = "features"
+        }
+        create("minimal") {
+            dimension = "features"
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -23,14 +40,24 @@ android {
     }
 
     publishing {
-        singleVariant("release") {
+        multipleVariants {
+            allVariants()
             withSourcesJar()
         }
     }
 
     sourceSets {
-        getByName("main") {
-            jniLibs.srcDirs("src/main/jniLibs")
+        getByName("full") {
+            jniLibs.srcDirs("src/full/jniLibs")
+        }
+        getByName("noImages") {
+            jniLibs.srcDirs("src/noImages/jniLibs")
+        }
+        getByName("noText") {
+            jniLibs.srcDirs("src/noText/jniLibs")
+        }
+        getByName("minimal") {
+            jniLibs.srcDirs("src/minimal/jniLibs")
         }
     }
 }
@@ -41,16 +68,13 @@ dependencies {
 
 publishing {
     publications {
-        create<MavenPublication>("release") {
+        fun MavenPublication.configurePom(artifact: String, desc: String) {
             groupId = "com.resvg"
-            artifactId = "resvg-mobile"
+            artifactId = artifact
             version = "0.1.0"
-            afterEvaluate {
-                from(components["release"])
-            }
             pom {
-                name.set("resvg-mobile")
-                description.set("Cross-platform SVG rasterizer (resvg + UniFFI) for Android")
+                name.set(artifact)
+                description.set(desc)
                 url.set("https://github.com/keremkusmezerbetsson/resvg-mobile")
                 licenses {
                     license {
@@ -71,6 +95,23 @@ publishing {
                 }
             }
         }
+
+        create<MavenPublication>("fullRelease") {
+            configurePom("resvg-mobile", "Cross-platform SVG rasterizer (full: text + images)")
+            afterEvaluate { from(components["fullRelease"]) }
+        }
+        create<MavenPublication>("noImagesRelease") {
+            configurePom("resvg-mobile-no-images", "resvg-mobile without JPEG/GIF/WebP codecs")
+            afterEvaluate { from(components["noImagesRelease"]) }
+        }
+        create<MavenPublication>("noTextRelease") {
+            configurePom("resvg-mobile-no-text", "resvg-mobile without font/text stack")
+            afterEvaluate { from(components["noTextRelease"]) }
+        }
+        create<MavenPublication>("minimalRelease") {
+            configurePom("resvg-mobile-minimal", "resvg-mobile without text and image codecs")
+            afterEvaluate { from(components["minimalRelease"]) }
+        }
     }
 }
 
@@ -81,32 +122,31 @@ fun hasCargoNdk(): Boolean = try {
 }
 
 fun jniLibsPresent(): Boolean {
-    val root = file("src/main/jniLibs")
-    if (!root.isDirectory) return false
-    return root.walkTopDown().any { it.isFile && it.extension == "so" }
+    val flavors = listOf("full", "noImages", "noText", "minimal")
+    return flavors.any { flavor ->
+        val root = file("src/$flavor/jniLibs")
+        root.isDirectory && root.walkTopDown().any { it.isFile && it.extension == "so" }
+    }
 }
 
-// Build Rust cdylib for Android ABIs via cargo-ndk.
+// Build Rust cdylibs via cargo-ndk (default: full flavor only; VARIANT=all for every size).
 tasks.register<Exec>("cargoNdkBuild") {
-    workingDir = file("../../rust")
-    commandLine(
-        "cargo", "ndk",
-        "-t", "arm64-v8a",
-        "-t", "armeabi-v7a",
-        "-t", "x86_64",
-        "-o", "../android/resvg-mobile/src/main/jniLibs",
-        "build", "-p", "resvg-mobile", "--release"
-    )
+    workingDir = file("../../")
+    commandLine("bash", "scripts/build-android-variants.sh")
+    environment("VARIANT", System.getenv("VARIANT") ?: "full")
     isIgnoreExitValue = false
-    onlyIf { hasCargoNdk() }
+    onlyIf {
+        hasCargoNdk() && System.getenv("SKIP_CARGO_NDK") != "1"
+    }
 }
 
 tasks.register("verifyJniLibs") {
     doLast {
         if (!jniLibsPresent()) {
             throw GradleException(
-                "Missing libuniffi_resvg_mobile.so under src/main/jniLibs. " +
-                    "Install cargo-ndk and rebuild, or place prebuilt ABIs before assembling.",
+                "Missing libuniffi_resvg_mobile.so under src/<flavor>/jniLibs. " +
+                    "Run ./scripts/build-android-variants.sh (requires cargo-ndk), " +
+                    "or set VARIANT=full for a single flavor.",
             )
         }
     }

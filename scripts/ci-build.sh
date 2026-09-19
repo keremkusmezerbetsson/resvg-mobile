@@ -35,10 +35,13 @@ if [[ "${BUILD_ANDROID:-0}" == "1" ]]; then
     echo "error: cargo-ndk is required when BUILD_ANDROID=1" >&2
     exit 1
   fi
-  cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 \
-    -o "$ROOT/android/resvg-mobile/src/main/jniLibs" \
-    build -p resvg-mobile --release
-  (cd "$ROOT/android" && ./gradlew :resvg-mobile:assembleRelease :resvg-mobile-ui:assembleRelease)
+  VARIANT="${VARIANT:-all}" "$ROOT/scripts/build-android-variants.sh"
+  (cd "$ROOT/android" && ./gradlew \
+    :resvg-mobile:assembleFullRelease \
+    :resvg-mobile:assembleNoImagesRelease \
+    :resvg-mobile:assembleNoTextRelease \
+    :resvg-mobile:assembleMinimalRelease \
+    :resvg-mobile-ui:assembleRelease)
 fi
 
 echo "OK"

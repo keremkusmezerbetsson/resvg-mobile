@@ -3,17 +3,10 @@
 //! Pixel format: **straight (non-premultiplied) RGBA**, row-major.
 //! Callers should convert on the platform side (`UIImage` / `Bitmap`).
 
-use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
 
 use tiny_skia::{Pixmap, Transform};
-use usvg::fontdb::{self, Database as FontDatabase};
-use usvg::{
-    FontFamily, FontResolver, FontStretch, FontStyle, Options as UsvgOptions, Tree,
-};
+use usvg::{Options as UsvgOptions, Tree};
 
 uniffi::include_scaffolding!("resvg_mobile");
 
@@ -108,199 +101,226 @@ pub enum ResvgError {
     Fonts,
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
-struct FontDbKey {
-    dirs: Vec<String>,
-    data_hashes: Vec<u64>,
-}
+#[cfg(feature = "text")]
+mod text_fonts {
+    use std::collections::hash_map::DefaultHasher;
+    use std::collections::HashMap;
+    use std::hash::{Hash, Hasher};
+    use std::path::Path;
+    use std::sync::{Arc, Mutex, OnceLock};
 
-fn font_db_cache() -> &'static Mutex<HashMap<FontDbKey, Arc<FontDatabase>>> {
-    static CACHE: OnceLock<Mutex<HashMap<FontDbKey, Arc<FontDatabase>>>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
-}
+    use usvg::fontdb::{self, Database as FontDatabase};
+    use usvg::{
+        FontFamily, FontResolver, FontStretch, FontStyle, Options as UsvgOptions,
+    };
 
-fn hash_bytes(data: &[u8]) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    data.hash(&mut hasher);
-    hasher.finish()
-}
+    use super::{FontAlias, FontConfig};
 
-fn font_db_key(fonts: &FontConfig) -> FontDbKey {
-    let mut dirs: Vec<String> = fonts
-        .dirs
-        .iter()
-        .filter(|dir| Path::new(dir.as_str()).is_dir())
-        .cloned()
-        .collect();
-    dirs.sort();
-    dirs.dedup();
-    let data_hashes = fonts.data.iter().map(|blob| hash_bytes(blob)).collect();
-    FontDbKey { dirs, data_hashes }
-}
+    #[derive(Clone, PartialEq, Eq, Hash)]
+    struct FontDbKey {
+        dirs: Vec<String>,
+        data_hashes: Vec<u64>,
+    }
 
-fn configure_generic_families(db: &mut FontDatabase) {
-    // Match resvg-test-suite fonts when present; names are stored even if missing.
-    db.set_sans_serif_family("Noto Sans");
-    db.set_serif_family("Noto Serif");
-    db.set_monospace_family("Noto Mono");
-    db.set_cursive_family("Yellowtail");
-    db.set_fantasy_family("Sedgwick Ave Display");
-}
+    fn font_db_cache() -> &'static Mutex<HashMap<FontDbKey, Arc<FontDatabase>>> {
+        static CACHE: OnceLock<Mutex<HashMap<FontDbKey, Arc<FontDatabase>>>> = OnceLock::new();
+        CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+    }
 
-fn normalize_family(name: &str) -> String {
-    name.split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_ascii_lowercase()
-}
+    fn hash_bytes(data: &[u8]) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        data.hash(&mut hasher);
+        hasher.finish()
+    }
 
-fn alias_map(aliases: &[FontAlias]) -> HashMap<String, String> {
-    let mut map = HashMap::new();
-    for alias in aliases {
-        let from = normalize_family(&alias.requested);
-        let to = alias.replacement.trim();
-        if !from.is_empty() && !to.is_empty() {
-            map.insert(from, to.to_string());
+    fn font_db_key(fonts: &FontConfig) -> FontDbKey {
+        let mut dirs: Vec<String> = fonts
+            .dirs
+            .iter()
+            .filter(|dir| Path::new(dir.as_str()).is_dir())
+            .cloned()
+            .collect();
+        dirs.sort();
+        dirs.dedup();
+        let data_hashes = fonts.data.iter().map(|blob| hash_bytes(blob)).collect();
+        FontDbKey { dirs, data_hashes }
+    }
+
+    fn configure_generic_families(db: &mut FontDatabase) {
+        // Match resvg-test-suite fonts when present; names are stored even if missing.
+        db.set_sans_serif_family("Noto Sans");
+        db.set_serif_family("Noto Serif");
+        db.set_monospace_family("Noto Mono");
+        db.set_cursive_family("Yellowtail");
+        db.set_fantasy_family("Sedgwick Ave Display");
+    }
+
+    fn normalize_family(name: &str) -> String {
+        name.split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_ascii_lowercase()
+    }
+
+    fn alias_map(aliases: &[FontAlias]) -> HashMap<String, String> {
+        let mut map = HashMap::new();
+        for alias in aliases {
+            let from = normalize_family(&alias.requested);
+            let to = alias.replacement.trim();
+            if !from.is_empty() && !to.is_empty() {
+                map.insert(from, to.to_string());
+            }
+        }
+        map
+    }
+
+    fn stretch_to_fontdb(stretch: FontStretch) -> fontdb::Stretch {
+        match stretch {
+            FontStretch::UltraCondensed => fontdb::Stretch::UltraCondensed,
+            FontStretch::ExtraCondensed => fontdb::Stretch::ExtraCondensed,
+            FontStretch::Condensed => fontdb::Stretch::Condensed,
+            FontStretch::SemiCondensed => fontdb::Stretch::SemiCondensed,
+            FontStretch::Normal => fontdb::Stretch::Normal,
+            FontStretch::SemiExpanded => fontdb::Stretch::SemiExpanded,
+            FontStretch::Expanded => fontdb::Stretch::Expanded,
+            FontStretch::ExtraExpanded => fontdb::Stretch::ExtraExpanded,
+            FontStretch::UltraExpanded => fontdb::Stretch::UltraExpanded,
         }
     }
-    map
-}
 
-fn stretch_to_fontdb(stretch: FontStretch) -> fontdb::Stretch {
-    match stretch {
-        FontStretch::UltraCondensed => fontdb::Stretch::UltraCondensed,
-        FontStretch::ExtraCondensed => fontdb::Stretch::ExtraCondensed,
-        FontStretch::Condensed => fontdb::Stretch::Condensed,
-        FontStretch::SemiCondensed => fontdb::Stretch::SemiCondensed,
-        FontStretch::Normal => fontdb::Stretch::Normal,
-        FontStretch::SemiExpanded => fontdb::Stretch::SemiExpanded,
-        FontStretch::Expanded => fontdb::Stretch::Expanded,
-        FontStretch::ExtraExpanded => fontdb::Stretch::ExtraExpanded,
-        FontStretch::UltraExpanded => fontdb::Stretch::UltraExpanded,
+    fn style_to_fontdb(style: FontStyle) -> fontdb::Style {
+        match style {
+            FontStyle::Normal => fontdb::Style::Normal,
+            FontStyle::Italic => fontdb::Style::Italic,
+            FontStyle::Oblique => fontdb::Style::Oblique,
+        }
     }
-}
 
-fn style_to_fontdb(style: FontStyle) -> fontdb::Style {
-    match style {
-        FontStyle::Normal => fontdb::Style::Normal,
-        FontStyle::Italic => fontdb::Style::Italic,
-        FontStyle::Oblique => fontdb::Style::Oblique,
+    fn aliased_font_selector(
+        aliases: Arc<HashMap<String, String>>,
+    ) -> usvg::FontSelectionFn<'static> {
+        Box::new(move |font, db| {
+            let mut named: Vec<String> = Vec::new();
+            let mut generics: Vec<fontdb::Family<'_>> = Vec::new();
+
+            for family in font.families() {
+                match family {
+                    FontFamily::Named(name) => {
+                        if let Some(replacement) = aliases.get(&normalize_family(name)) {
+                            named.push(replacement.clone());
+                        }
+                        named.push(name.clone());
+                    }
+                    FontFamily::Serif => {
+                        if let Some(replacement) = aliases.get("serif") {
+                            named.push(replacement.clone());
+                        }
+                        generics.push(fontdb::Family::Serif);
+                    }
+                    FontFamily::SansSerif => {
+                        if let Some(replacement) = aliases.get("sans-serif") {
+                            named.push(replacement.clone());
+                        }
+                        generics.push(fontdb::Family::SansSerif);
+                    }
+                    FontFamily::Cursive => {
+                        if let Some(replacement) = aliases.get("cursive") {
+                            named.push(replacement.clone());
+                        }
+                        generics.push(fontdb::Family::Cursive);
+                    }
+                    FontFamily::Fantasy => {
+                        if let Some(replacement) = aliases.get("fantasy") {
+                            named.push(replacement.clone());
+                        }
+                        generics.push(fontdb::Family::Fantasy);
+                    }
+                    FontFamily::Monospace => {
+                        if let Some(replacement) = aliases.get("monospace") {
+                            named.push(replacement.clone());
+                        }
+                        generics.push(fontdb::Family::Monospace);
+                    }
+                }
+            }
+
+            let mut families: Vec<fontdb::Family<'_>> = named
+                .iter()
+                .map(|name| fontdb::Family::Name(name.as_str()))
+                .collect();
+            families.extend(generics);
+            families.push(fontdb::Family::Serif);
+
+            let query = fontdb::Query {
+                families: &families,
+                weight: fontdb::Weight(font.weight()),
+                stretch: stretch_to_fontdb(font.stretch()),
+                style: style_to_fontdb(font.style()),
+            };
+            db.query(&query)
+        })
     }
-}
 
-fn aliased_font_selector(
-    aliases: Arc<HashMap<String, String>>,
-) -> usvg::FontSelectionFn<'static> {
-    Box::new(move |font, db| {
-        let mut named: Vec<String> = Vec::new();
-        let mut generics: Vec<fontdb::Family<'_>> = Vec::new();
-
-        for family in font.families() {
-            match family {
-                FontFamily::Named(name) => {
-                    if let Some(replacement) = aliases.get(&normalize_family(name)) {
-                        named.push(replacement.clone());
-                    }
-                    named.push(name.clone());
-                }
-                FontFamily::Serif => {
-                    if let Some(replacement) = aliases.get("serif") {
-                        named.push(replacement.clone());
-                    }
-                    generics.push(fontdb::Family::Serif);
-                }
-                FontFamily::SansSerif => {
-                    if let Some(replacement) = aliases.get("sans-serif") {
-                        named.push(replacement.clone());
-                    }
-                    generics.push(fontdb::Family::SansSerif);
-                }
-                FontFamily::Cursive => {
-                    if let Some(replacement) = aliases.get("cursive") {
-                        named.push(replacement.clone());
-                    }
-                    generics.push(fontdb::Family::Cursive);
-                }
-                FontFamily::Fantasy => {
-                    if let Some(replacement) = aliases.get("fantasy") {
-                        named.push(replacement.clone());
-                    }
-                    generics.push(fontdb::Family::Fantasy);
-                }
-                FontFamily::Monospace => {
-                    if let Some(replacement) = aliases.get("monospace") {
-                        named.push(replacement.clone());
-                    }
-                    generics.push(fontdb::Family::Monospace);
-                }
+    fn load_font_database(fonts: &FontConfig) -> Arc<FontDatabase> {
+        let key = font_db_key(fonts);
+        {
+            let cache = font_db_cache().lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(existing) = cache.get(&key) {
+                return existing.clone();
             }
         }
 
-        let mut families: Vec<fontdb::Family<'_>> = named
-            .iter()
-            .map(|name| fontdb::Family::Name(name.as_str()))
-            .collect();
-        families.extend(generics);
-        families.push(fontdb::Family::Serif);
-
-        let query = fontdb::Query {
-            families: &families,
-            weight: fontdb::Weight(font.weight()),
-            stretch: stretch_to_fontdb(font.stretch()),
-            style: style_to_fontdb(font.style()),
-        };
-        db.query(&query)
-    })
-}
-
-fn load_font_database(fonts: &FontConfig) -> Arc<FontDatabase> {
-    let key = font_db_key(fonts);
-    {
-        let cache = font_db_cache().lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(existing) = cache.get(&key) {
-            return existing.clone();
+        let mut db = FontDatabase::new();
+        for dir in &key.dirs {
+            db.load_fonts_dir(Path::new(dir));
         }
+        for blob in &fonts.data {
+            db.load_font_data(blob.clone());
+        }
+        configure_generic_families(&mut db);
+        let loaded = Arc::new(db);
+
+        let mut cache = font_db_cache().lock().unwrap_or_else(|e| e.into_inner());
+        cache.entry(key).or_insert_with(|| loaded.clone()).clone()
     }
 
-    let mut db = FontDatabase::new();
-    for dir in &key.dirs {
-        db.load_fonts_dir(Path::new(dir));
+    fn key_has_faces(key: &FontDbKey) -> bool {
+        !key.dirs.is_empty() || !key.data_hashes.is_empty()
     }
-    for blob in &fonts.data {
-        db.load_font_data(blob.clone());
-    }
-    configure_generic_families(&mut db);
-    let loaded = Arc::new(db);
 
-    let mut cache = font_db_cache().lock().unwrap_or_else(|e| e.into_inner());
-    cache.entry(key).or_insert_with(|| loaded.clone()).clone()
+    pub(super) fn usvg_options(fonts: &FontConfig) -> UsvgOptions<'static> {
+        let mut opt = UsvgOptions::default();
+        opt.fontdb = load_font_database(fonts);
+        if let Some(family) = fonts
+            .default_family
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            opt.font_family = family.to_string();
+        } else if key_has_faces(&font_db_key(fonts)) {
+            opt.font_family = "Noto Sans".into();
+        }
+
+        if !fonts.aliases.is_empty() {
+            opt.font_resolver = FontResolver {
+                select_font: aliased_font_selector(Arc::new(alias_map(&fonts.aliases))),
+                select_fallback: FontResolver::default_fallback_selector(),
+            };
+        }
+        opt
+    }
 }
 
+#[cfg(feature = "text")]
 fn usvg_options(fonts: &FontConfig) -> UsvgOptions<'static> {
-    let mut opt = UsvgOptions::default();
-    opt.fontdb = load_font_database(fonts);
-    if let Some(family) = fonts
-        .default_family
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        opt.font_family = family.to_string();
-    } else if key_has_faces(&font_db_key(fonts)) {
-        opt.font_family = "Noto Sans".into();
-    }
-
-    if !fonts.aliases.is_empty() {
-        opt.font_resolver = FontResolver {
-            select_font: aliased_font_selector(Arc::new(alias_map(&fonts.aliases))),
-            select_fallback: FontResolver::default_fallback_selector(),
-        };
-    }
-    opt
+    text_fonts::usvg_options(fonts)
 }
 
-fn key_has_faces(key: &FontDbKey) -> bool {
-    !key.dirs.is_empty() || !key.data_hashes.is_empty()
+#[cfg(not(feature = "text"))]
+fn usvg_options(_fonts: &FontConfig) -> UsvgOptions<'static> {
+    // FontConfig is ignored when the text stack is compiled out.
+    UsvgOptions::default()
 }
 
 fn parse_tree(
@@ -712,6 +732,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "text")]
     #[test]
     fn text_renders_with_suite_fonts() {
         let fonts = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -742,12 +763,14 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "text")]
     fn suite_noto_regular() -> Option<Vec<u8>> {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests/suite/vendor/resvg-test-suite/fonts/NotoSans-Regular.ttf");
         std::fs::read(path).ok()
     }
 
+    #[cfg(feature = "text")]
     #[test]
     fn text_renders_from_raw_font_bytes() {
         let Some(font) = suite_noto_regular() else {
@@ -778,6 +801,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "text")]
     #[test]
     fn font_alias_maps_missing_family() {
         let Some(font) = suite_noto_regular() else {
@@ -825,5 +849,14 @@ mod tests {
             "alias should resolve App Sans to Noto Sans, got {}",
             opaque_pixel_count(&with_alias)
         );
+    }
+
+    #[cfg(not(feature = "text"))]
+    #[test]
+    fn render_works_without_text_feature() {
+        let img = render(CIRCLE_SVG, RenderOptions::default()).unwrap();
+        assert_eq!(img.width, 100);
+        assert_eq!(img.height, 100);
+        assert!(!img.rgba.is_empty());
     }
 }

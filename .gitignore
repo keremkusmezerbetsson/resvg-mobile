@@ -17,10 +17,17 @@ android/.gradle/
 android/**/build/
 android/local.properties
 android/resvg-mobile/src/main/jniLibs/
+android/resvg-mobile/src/full/jniLibs/
+android/resvg-mobile/src/noImages/jniLibs/
+android/resvg-mobile/src/noText/jniLibs/
+android/resvg-mobile/src/minimal/jniLibs/
 android/gallery/src/main/assets/resvg-suite/
 android/gallery/src/main/assets/suite-fonts/
 android/.idea/
 android/captures/
+
+# iOS size variants (built by rust/build-ios.sh)
+ios/variants/
 
 # Gallery apps — full resvg-test-suite is synced via scripts/sync-gallery-svgs.sh
 examples/ios-gallery/ResvgGallery/resvg-suite/

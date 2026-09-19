@@ -11,6 +11,7 @@ android {
 
     defaultConfig {
         minSdk = 24
+        missingDimensionStrategy("features", "full")
     }
 
     buildFeatures {

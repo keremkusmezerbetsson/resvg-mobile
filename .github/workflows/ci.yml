@@ -19,10 +19,18 @@ jobs:
           chmod +x ../scripts/fetch-test-suite.sh
           ../scripts/fetch-test-suite.sh
       - name: Test
-        run: cargo test -p resvg-mobile
+        run: |
+          cargo test -p resvg-mobile
+          cargo test -p resvg-mobile --no-default-features
+          cargo test -p resvg-mobile --no-default-features --features text
+          cargo test -p resvg-mobile --no-default-features --features images
       - name: Release build (size check)
         run: |
-          cargo build -p resvg-mobile --release
+          for args in "" "--no-default-features --features text" "--no-default-features --features images" "--no-default-features"; do
+            echo "==> cargo build --release $args"
+            # shellcheck disable=SC2086
+            cargo build -p resvg-mobile --release $args
+          done
           ls -lh target/release/libuniffi_resvg_mobile.* || ls -lh target/release/*.rlib
       - name: Generate bindings and check drift
         run: |
@@ -60,23 +68,29 @@ jobs:
           ndk-version: r27c
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
-      - name: Build native libs
+      - name: Build native libs (all size variants)
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
-          cd rust
-          cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 \
-            -o ../android/resvg-mobile/src/main/jniLibs \
-            build -p resvg-mobile --release
+          chmod +x scripts/build-android-variants.sh
+          ./scripts/build-android-variants.sh
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
       - name: Assemble AAR + demo
         working-directory: android
+        env:
+          SKIP_CARGO_NDK: "1"
         run: |
           chmod +x gradlew
-          ./gradlew :resvg-mobile:assembleRelease :resvg-mobile-ui:assembleRelease :demo:assembleDebug
+          ./gradlew \
+            :resvg-mobile:assembleFullRelease \
+            :resvg-mobile:assembleNoImagesRelease \
+            :resvg-mobile:assembleNoTextRelease \
+            :resvg-mobile:assembleMinimalRelease \
+            :resvg-mobile-ui:assembleRelease \
+            :demo:assembleDebug
       - uses: actions/upload-artifact@v4
         with:
           name: android-aars
@@ -94,8 +108,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
-      - name: Build XCFramework
-        run: ./rust/build-ios.sh
+      - name: Build XCFramework (all variants)
+        run: VARIANT=all ./rust/build-ios.sh
       - name: Compile Swift package
         working-directory: ios
         run: |
@@ -110,15 +124,20 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath /tmp/ResvgDemo-DerivedData \
             CODE_SIGNING_ALLOWED=NO build
-      - name: Package XCFramework zip
+      - name: Package XCFramework zips
         run: |
           cd ios
           ditto -c -k --keepParent ResvgMobileFFI.xcframework ResvgMobileFFI.xcframework.zip
+          for v in full no-images no-text minimal; do
+            ditto -c -k --keepParent "variants/$v/ResvgMobileFFI.xcframework" \
+              "ResvgMobileFFI-$v.xcframework.zip"
+          done
           cp ../NOTICE ../LICENSE .
       - uses: actions/upload-artifact@v4
         with:
           name: ios-xcframework
           path: |
             ios/ResvgMobileFFI.xcframework.zip
+            ios/ResvgMobileFFI-*.xcframework.zip
             ios/NOTICE
             ios/LICENSE

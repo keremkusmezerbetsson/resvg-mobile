@@ -37,6 +37,8 @@ RESVG_RUN_FULL_SUITE=1 cargo test -p resvg-mobile --test svg_suite full_suite_re
 
 Smoke cases are chosen to cover shapes, painting, structure, paint servers, masking, and filters without external image/font dependencies.
 
+Default Cargo features (`text` + `images`) match the **full** mobile variant. Smoke cases do not require fonts or embedded rasters, so they also pass with `--no-default-features`.
+
 ## Updating the upstream pin
 
 1. Pick a commit from [resvg-test-suite](https://github.com/linebender/resvg-test-suite).
