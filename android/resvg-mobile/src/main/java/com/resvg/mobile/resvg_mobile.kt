@@ -719,6 +719,8 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -741,6 +743,8 @@ fun uniffi_uniffi_resvg_mobile_checksum_func_render(
 fun uniffi_uniffi_resvg_mobile_checksum_func_render_with_font_config(
 ): Short
 fun uniffi_uniffi_resvg_mobile_checksum_func_render_with_fonts(
+): Short
+fun uniffi_uniffi_resvg_mobile_checksum_func_render_with_resources(
 ): Short
 fun ffi_uniffi_resvg_mobile_uniffi_contract_version(
 ): Int
@@ -794,6 +798,8 @@ fun uniffi_uniffi_resvg_mobile_fn_func_render(`svg`: RustBuffer.ByValue,`options
 fun uniffi_uniffi_resvg_mobile_fn_func_render_with_font_config(`svg`: RustBuffer.ByValue,`options`: RustBuffer.ByValue,`fonts`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_uniffi_resvg_mobile_fn_func_render_with_fonts(`svg`: RustBuffer.ByValue,`options`: RustBuffer.ByValue,`fontDirs`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_uniffi_resvg_mobile_fn_func_render_with_resources(`svg`: RustBuffer.ByValue,`options`: RustBuffer.ByValue,`fonts`: RustBuffer.ByValue,`resourcesDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun ffi_uniffi_resvg_mobile_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -931,6 +937,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_uniffi_resvg_mobile_checksum_func_render_with_fonts() != 3619.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_uniffi_resvg_mobile_checksum_func_render_with_resources() != 29542.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
 }
@@ -1686,6 +1695,16 @@ public object FfiConverterSequenceTypeFontAlias: FfiConverterRustBuffer<List<Fon
     uniffiRustCallWithError(ResvgException) { _status ->
     UniffiLib.INSTANCE.uniffi_uniffi_resvg_mobile_fn_func_render_with_fonts(
         FfiConverterByteArray.lower(`svg`),FfiConverterTypeRenderOptions.lower(`options`),FfiConverterSequenceString.lower(`fontDirs`),_status)
+}
+    )
+    }
+    
+
+    @Throws(ResvgException::class) fun `renderWithResources`(`svg`: kotlin.ByteArray, `options`: RenderOptions, `fonts`: FontConfig, `resourcesDir`: kotlin.String?): RenderedImage {
+            return FfiConverterTypeRenderedImage.lift(
+    uniffiRustCallWithError(ResvgException) { _status ->
+    UniffiLib.INSTANCE.uniffi_uniffi_resvg_mobile_fn_func_render_with_resources(
+        FfiConverterByteArray.lower(`svg`),FfiConverterTypeRenderOptions.lower(`options`),FfiConverterTypeFontConfig.lower(`fonts`),FfiConverterOptionalString.lower(`resourcesDir`),_status)
 }
     )
     }

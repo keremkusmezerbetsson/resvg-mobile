@@ -1,6 +1,25 @@
 # Rust
 rust/target/
 rust/resvg-mobile/tests/suite/vendor/
+rust/resvg-mobile/tests/suite/goldens/full.jsonl
+
+# Suite comparison artifacts
+artifacts/suite/
+scripts/__pycache__/
+
+# Synced suite harness fixtures (regenerate via sync-suite-assets.sh)
+android/resvg-mobile/src/androidTest/assets/suite/
+android/resvg-mobile/src/androidTest/assets/suite-fonts/
+android/resvg-mobile/src/androidTest/assets/resources/
+android/resvg-mobile/src/androidTest/assets/smoke.txt
+android/resvg-mobile/src/androidTest/assets/manifest.txt
+android/resvg-mobile/src/androidTest/assets/full.marker
+ios/Tests/ResvgMobileSuiteTests/Fixtures/suite/
+ios/Tests/ResvgMobileSuiteTests/Fixtures/suite-fonts/
+ios/Tests/ResvgMobileSuiteTests/Fixtures/resources/
+ios/Tests/ResvgMobileSuiteTests/Fixtures/smoke.txt
+ios/Tests/ResvgMobileSuiteTests/Fixtures/full.marker
+# keep Fixtures/README.md + default manifest.txt tracked
 
 # iOS
 ios/.build/

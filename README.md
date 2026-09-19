@@ -11,6 +11,7 @@ Cross-platform SVG rasterizer for **Android** and **iOS**, built on
 - Pixel format: **straight (non-premultiplied) RGBA**
 - Platform adapters: `Bitmap` (Android) / `UIImage` (iOS)
 - Optional UI: `ResvgImageView` + Compose / SwiftUI wrappers (LRU cache, off-main render)
+- Optional Coil 3: `ResvgDecoder` (`:resvg-mobile-coil`) for `AsyncImage` / `ImageLoader`
 
 ## Layout
 
@@ -18,9 +19,9 @@ Cross-platform SVG rasterizer for **Android** and **iOS**, built on
 resvg-mobile/
   rust/resvg-mobile/   # Rust + UniFFI (cdylib / staticlib)
   ios/                 # Swift Package: ResvgMobile + ResvgMobileUI
-  android/             # Gradle AARs: resvg-mobile + resvg-mobile-ui + demo + gallery
+  android/             # AARs: resvg-mobile, resvg-mobile-ui, resvg-mobile-coil + demo + gallery
   examples/            # Sample SVG, iOS demo, iOS gallery
-  scripts/             # fetch-test-suite, sync-gallery-svgs, build-android-variants, ci-build
+  scripts/             # fetch-test-suite, sync-gallery-svgs, suite goldens/compare, ci-build
 ```
 
 ## Prerequisites
@@ -125,12 +126,41 @@ val sized = Resvg.renderBitmap(
 ```
 
 Native library loaded by UniFFI/JNA: `libuniffi_resvg_mobile.so`.
+
+### Coil 3 (`resvg-mobile-coil`)
+
+Rasterize SVG through Coil’s pipeline (HTTP/file/asset/`ByteArray` fetchers stay Coil’s; we only decode):
+
+```kotlin
+implementation(project(":resvg-mobile-coil"))
+// or Maven: com.resvg:resvg-mobile-coil:0.1.0
+implementation("io.coil-kt.coil3:coil-compose:3.3.0")
+
+val imageLoader = ImageLoader.Builder(context)
+    .components { add(ResvgDecoder.Factory()) }
+    // Optional default fonts for every request:
+    // .resvgFonts(Resvg.loadAssetFontConfig(context))
+    .build()
+
+AsyncImage(
+    model = ImageRequest.Builder(context)
+        .data("file:///android_asset/sample.svg") // or ByteArray, File, https URL, …
+        .resvgFonts(Resvg.loadAssetFontConfig(context)) // optional per-request
+        .build(),
+    contentDescription = null,
+    imageLoader = imageLoader,
+)
+```
+
+Requires **Kotlin 2.2+** (Coil 3.3). Demo app shows both `ResvgImage` and Coil `AsyncImage`.
+
 ## Rust API
 
 ```text
 render(svg, RenderOptions { width, height, fit, background }) -> RenderedImage
 render_with_fonts(svg, options, font_dirs) -> RenderedImage
 render_with_font_config(svg, options, FontConfig { dirs, data, aliases, default_family }) -> RenderedImage
+render_with_resources(svg, options, fonts, resources_dir?) -> RenderedImage  # relative image hrefs
 intrinsic_size(svg) -> SizeF
 ```
 
@@ -191,14 +221,30 @@ The Rust core caches the font database by directory list + data hashes so tiles 
 
 Builds without the Cargo `text` feature (Gradle `noText` / `minimal`, iOS `VARIANT=no-text|minimal`) keep the same `FontConfig` UniFFI APIs but ignore font input and never paint glyphs.
 
+## Cross-platform SVG suite
+
+Compare Rust host goldens, Android emulator, and iOS simulator renders of the same fixtures (SHA-256 of straight RGBA @ 512×512 Contain). Smoke (~57 cases: shapes, painting, structure including embedded/external images, paint servers, masking, filters) runs on every PR; full suite (~1,676 renders of ~1,679 SVGs, ≤2% failure gate) on the nightly workflow. External image hrefs use UniFFI `render_with_resources` with a synced vendor `resources/` tree. Details: [`rust/resvg-mobile/tests/suite/README.md`](rust/resvg-mobile/tests/suite/README.md).
+
+```bash
+./scripts/fetch-test-suite.sh
+./scripts/generate-suite-goldens.sh smoke
+./scripts/sync-suite-assets.sh smoke
+MANIFEST=smoke ./scripts/run-android-suite.sh
+MANIFEST=smoke ./scripts/run-ios-suite.sh
+./scripts/compare-suite-results.py \
+  --golden rust/resvg-mobile/tests/suite/goldens/smoke.jsonl \
+  --android artifacts/suite/android-results.jsonl \
+  --ios artifacts/suite/ios-results.jsonl
+```
+
 ## Publishing
 
 | Artifact | Notes |
 |----------|--------|
 | iOS | Run `./rust/build-ios.sh` (or `VARIANT=all`), then ship `ios/ResvgMobileFFI.xcframework` and/or `ios/variants/*/`. CI uploads zips per variant. Consumers cloning this repo must build an XCFramework before resolving the Swift package. |
-| Android | From `android/`: `./gradlew publishToMavenLocal` publishes flavor artifactIds `resvg-mobile`, `resvg-mobile-no-images`, `resvg-mobile-no-text`, `resvg-mobile-minimal`. Remote Maven / GitHub Packages needs `publishing.repositories`, credentials, and (optionally) signing — not configured by default. |
+| Android | From `android/`: `./gradlew publishToMavenLocal` publishes `resvg-mobile` (+ flavor artifactIds), `resvg-mobile-ui`, and `resvg-mobile-coil`. Remote Maven / GitHub Packages needs `publishing.repositories`, credentials, and (optionally) signing — not configured by default. |
 
-CI (`.github/workflows/ci.yml`) runs Rust tests for all feature sets, builds all Android flavor AARs + demo, builds all iOS XCFramework variants, and compiles the Swift package.
+CI (`.github/workflows/ci.yml`) runs Rust tests (including smoke goldens), builds all Android flavor AARs + demo, builds all iOS XCFramework variants, runs the smoke suite on Android emulator + iOS simulator, and compares results. Nightly full suite: `.github/workflows/suite-nightly.yml`.
 
 ## Binary size
 

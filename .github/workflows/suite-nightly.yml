@@ -1,0 +1,148 @@
+name: Suite nightly (full)
+
+on:
+  schedule:
+    # 06:15 UTC daily
+    - cron: "15 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  rust-goldens:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Fetch suite + generate full goldens
+        run: |
+          chmod +x scripts/fetch-test-suite.sh scripts/generate-suite-goldens.sh
+          ./scripts/fetch-test-suite.sh
+          ./scripts/generate-suite-goldens.sh full
+      - name: Full Rust suite (with goldens)
+        working-directory: rust
+        env:
+          RESVG_RUN_FULL_SUITE: "1"
+        run: cargo test -p resvg-mobile --test svg_suite
+      - uses: actions/upload-artifact@v4
+        with:
+          name: suite-full-goldens
+          path: rust/resvg-mobile/tests/suite/goldens/full.jsonl
+
+  suite-android:
+    runs-on: ubuntu-latest
+    needs: rust-goldens
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r27c
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+      - name: Build full variant
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          VARIANT: full
+        run: |
+          chmod +x scripts/build-android-variants.sh scripts/fetch-test-suite.sh scripts/sync-suite-assets.sh
+          ./scripts/fetch-test-suite.sh
+          ./scripts/build-android-variants.sh
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Sync full assets
+        run: ./scripts/sync-suite-assets.sh full
+      - name: Android full suite (emulator)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          script: |
+            chmod +x scripts/run-android-suite.sh android/gradlew
+            DUMP_MISMATCH=1 MANIFEST=full SUITE_OUT_DIR=$GITHUB_WORKSPACE/artifacts/suite \
+              ./scripts/run-android-suite.sh
+        env:
+          SKIP_CARGO_NDK: "1"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: suite-android-full
+          path: |
+            artifacts/suite/android-results.jsonl
+            artifacts/suite/pixels/android/
+
+  suite-ios:
+    runs-on: macos-14
+    needs: rust-goldens
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
+      - name: Fetch suite + build XCFramework
+        run: |
+          chmod +x scripts/fetch-test-suite.sh scripts/sync-suite-assets.sh scripts/run-ios-suite.sh rust/build-ios.sh
+          ./scripts/fetch-test-suite.sh
+          VARIANT=full ./rust/build-ios.sh
+      - name: iOS full suite (simulator)
+        run: |
+          mkdir -p artifacts/suite
+          DUMP_MISMATCH=1 MANIFEST=full SUITE_OUT_DIR=$GITHUB_WORKSPACE/artifacts/suite \
+            ./scripts/run-ios-suite.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: suite-ios-full
+          path: |
+            artifacts/suite/ios-results.jsonl
+            artifacts/suite/pixels/ios/
+
+  suite-compare:
+    runs-on: ubuntu-latest
+    needs: [rust-goldens, suite-android, suite-ios]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: suite-full-goldens
+          path: rust/resvg-mobile/tests/suite/goldens
+      - uses: actions/download-artifact@v4
+        with:
+          name: suite-android-full
+          path: artifacts/suite
+      - uses: actions/download-artifact@v4
+        with:
+          name: suite-ios-full
+          path: artifacts/suite
+      - name: Compare full results (soft-pass allowed)
+        run: |
+          chmod +x scripts/compare-suite-results.py scripts/generate-suite-goldens.sh scripts/fetch-test-suite.sh
+          ./scripts/fetch-test-suite.sh
+          SUITE_DUMP_DIR=artifacts/suite/pixels/golden ./scripts/generate-suite-goldens.sh full
+          python3 scripts/compare-suite-results.py \
+            --golden rust/resvg-mobile/tests/suite/goldens/full.jsonl \
+            --android artifacts/suite/android-results.jsonl \
+            --ios artifacts/suite/ios-results.jsonl \
+            --android-dump artifacts/suite/pixels/android \
+            --ios-dump artifacts/suite/pixels/ios \
+            --golden-dump artifacts/suite/pixels/golden \
+            --fuzzy on-mismatch \
+            --soft-pass \
+            --max-abs 1 \
+            --pct-diff 0.01 \
+            --diff-dir artifacts/suite/diffs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: suite-full-report
+          path: |
+            artifacts/suite/
+            rust/resvg-mobile/tests/suite/goldens/full.jsonl

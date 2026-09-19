@@ -11,6 +11,7 @@ android {
     defaultConfig {
         minSdk = 24
         consumerProguardFiles("consumer-rules.pro")
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     flavorDimensions += "features"
@@ -64,6 +65,10 @@ android {
 
 dependencies {
     api("net.java.dev.jna:jna:5.15.0@aar")
+
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:rules:1.6.1")
 }
 
 publishing {

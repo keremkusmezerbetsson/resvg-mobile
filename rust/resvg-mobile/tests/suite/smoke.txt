@@ -1,5 +1,6 @@
-# Curated smoke subset of linebender/resvg-test-suite (~48 files).
+# Curated smoke subset of linebender/resvg-test-suite (~57 files).
 # One path per line, relative to tests/ inside the vendor checkout.
+# Includes embedded + external rasters (images feature). No text/ font cases.
 shapes/circle/simple-case.svg
 shapes/ellipse/simple-case.svg
 shapes/circle/missing-cx-and-cy-attributes.svg
@@ -24,6 +25,14 @@ structure/svg/preserveAspectRatio=xMidYMid.svg
 structure/symbol/with-transform-on-use.svg
 structure/transform-origin/on-text-path.svg
 structure/use/fill-opacity-inheritance.svg
+structure/image/embedded-png.svg
+structure/image/embedded-gif.svg
+structure/image/embedded-jpeg-as-image-jpeg.svg
+structure/image/embedded-jpeg-as-image-jpg.svg
+structure/image/embedded-16bit-png.svg
+structure/image/external-png.svg
+structure/image/external-jpeg.svg
+structure/image/external-gif.svg
 paint-servers/pattern/simple-case.svg
 paint-servers/stop-color/simple-case.svg
 paint-servers/linearGradient/attributes-via-xlink-href-complex-order.svg
@@ -48,3 +57,4 @@ filters/feDiffuseLighting/single-light-source-with-invalid-child.svg
 filters/feMorphology/negative-radius.svg
 filters/feTurbulence/seed=1.5.svg
 filters/filter/in=FillPaint-with-gradient.svg
+filters/feImage/embedded-png.svg

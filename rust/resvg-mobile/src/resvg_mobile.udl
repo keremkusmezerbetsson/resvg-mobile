@@ -8,6 +8,11 @@ namespace resvg_mobile {
   [Throws=ResvgError]
   RenderedImage render_with_font_config([ByRef] bytes svg, RenderOptions options, FontConfig fonts);
 
+  // `resources_dir` is the directory used to resolve relative image hrefs (same as usvg
+  // resources_dir / Rust render_file's SVG parent). Pass null to disable.
+  [Throws=ResvgError]
+  RenderedImage render_with_resources([ByRef] bytes svg, RenderOptions options, FontConfig fonts, string? resources_dir);
+
   [Throws=ResvgError]
   SizeF intrinsic_size([ByRef] bytes svg);
 };

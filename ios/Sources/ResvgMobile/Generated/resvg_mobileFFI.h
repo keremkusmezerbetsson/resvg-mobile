@@ -271,6 +271,11 @@ RustBuffer uniffi_uniffi_resvg_mobile_fn_func_render_with_font_config(RustBuffer
 RustBuffer uniffi_uniffi_resvg_mobile_fn_func_render_with_fonts(RustBuffer svg, RustBuffer options, RustBuffer font_dirs, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_UNIFFI_RESVG_MOBILE_FN_FUNC_RENDER_WITH_RESOURCES
+#define UNIFFI_FFIDEF_UNIFFI_UNIFFI_RESVG_MOBILE_FN_FUNC_RENDER_WITH_RESOURCES
+RustBuffer uniffi_uniffi_resvg_mobile_fn_func_render_with_resources(RustBuffer svg, RustBuffer options, RustBuffer fonts, RustBuffer resources_dir, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_FFI_UNIFFI_RESVG_MOBILE_RUSTBUFFER_ALLOC
 #define UNIFFI_FFIDEF_FFI_UNIFFI_RESVG_MOBILE_RUSTBUFFER_ALLOC
 RustBuffer ffi_uniffi_resvg_mobile_rustbuffer_alloc(uint64_t size, RustCallStatus *_Nonnull out_status
@@ -572,6 +577,12 @@ uint16_t uniffi_uniffi_resvg_mobile_checksum_func_render_with_font_config(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_UNIFFI_RESVG_MOBILE_CHECKSUM_FUNC_RENDER_WITH_FONTS
 #define UNIFFI_FFIDEF_UNIFFI_UNIFFI_RESVG_MOBILE_CHECKSUM_FUNC_RENDER_WITH_FONTS
 uint16_t uniffi_uniffi_resvg_mobile_checksum_func_render_with_fonts(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_UNIFFI_RESVG_MOBILE_CHECKSUM_FUNC_RENDER_WITH_RESOURCES
+#define UNIFFI_FFIDEF_UNIFFI_UNIFFI_RESVG_MOBILE_CHECKSUM_FUNC_RENDER_WITH_RESOURCES
+uint16_t uniffi_uniffi_resvg_mobile_checksum_func_render_with_resources(void
     
 );
 #endif

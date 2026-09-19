@@ -33,5 +33,13 @@ let package = Package(
             dependencies: ["ResvgMobile"],
             path: "Sources/ResvgMobileUI"
         ),
+        .testTarget(
+            name: "ResvgMobileSuiteTests",
+            dependencies: ["ResvgMobile"],
+            path: "Tests/ResvgMobileSuiteTests",
+            resources: [
+                .copy("Fixtures"),
+            ]
+        ),
     ]
 )

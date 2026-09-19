@@ -1343,6 +1343,16 @@ public func renderWithFonts(svg: Data, options: RenderOptions, fontDirs: [String
     )
 })
 }
+public func renderWithResources(svg: Data, options: RenderOptions, fonts: FontConfig, resourcesDir: String?)throws  -> RenderedImage  {
+    return try  FfiConverterTypeRenderedImage_lift(try rustCallWithError(FfiConverterTypeResvgError_lift) {
+    uniffi_uniffi_resvg_mobile_fn_func_render_with_resources(
+        FfiConverterData.lower(svg),
+        FfiConverterTypeRenderOptions_lower(options),
+        FfiConverterTypeFontConfig_lower(fonts),
+        FfiConverterOptionString.lower(resourcesDir),$0
+    )
+})
+}
 
 private enum InitializationResult {
     case ok
@@ -1369,6 +1379,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_uniffi_resvg_mobile_checksum_func_render_with_fonts() != 3619) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_uniffi_resvg_mobile_checksum_func_render_with_resources() != 29542) {
         return InitializationResult.apiChecksumMismatch
     }
 

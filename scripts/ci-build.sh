@@ -41,7 +41,8 @@ if [[ "${BUILD_ANDROID:-0}" == "1" ]]; then
     :resvg-mobile:assembleNoImagesRelease \
     :resvg-mobile:assembleNoTextRelease \
     :resvg-mobile:assembleMinimalRelease \
-    :resvg-mobile-ui:assembleRelease)
+    :resvg-mobile-ui:assembleRelease \
+    :resvg-mobile-coil:assembleRelease)
 fi
 
 echo "OK"

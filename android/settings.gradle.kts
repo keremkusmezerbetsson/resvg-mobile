@@ -17,5 +17,6 @@ dependencyResolutionManagement {
 rootProject.name = "resvg-mobile"
 include(":resvg-mobile")
 include(":resvg-mobile-ui")
+include(":resvg-mobile-coil")
 include(":demo")
 include(":gallery")

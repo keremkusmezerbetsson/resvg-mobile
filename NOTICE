@@ -25,6 +25,10 @@ are available from their upstream projects:
     https://github.com/java-native-access/jna
     License: Apache-2.0 OR LGPL-2.1-or-later
 
+  Coil (optional — resvg-mobile-coil)
+    https://github.com/coil-kt/coil
+    License: Apache-2.0
+
 When redistributing binary artifacts (AAR / XCFramework), include this NOTICE
 file and the applicable third-party license texts (for BSD-3-Clause that means
 the copyright notice and redistribution conditions from upstream).

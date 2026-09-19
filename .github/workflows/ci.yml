@@ -18,6 +18,14 @@ jobs:
         run: |
           chmod +x ../scripts/fetch-test-suite.sh
           ../scripts/fetch-test-suite.sh
+      - name: Verify smoke goldens
+        run: |
+          chmod +x ../scripts/generate-suite-goldens.sh
+          ../scripts/generate-suite-goldens.sh smoke
+          git diff --exit-code -- resvg-mobile/tests/suite/goldens/smoke.jsonl || {
+            echo "::error::smoke.jsonl drift — regenerate and commit goldens"
+            exit 1
+          }
       - name: Test
         run: |
           cargo test -p resvg-mobile
@@ -90,6 +98,7 @@ jobs:
             :resvg-mobile:assembleNoTextRelease \
             :resvg-mobile:assembleMinimalRelease \
             :resvg-mobile-ui:assembleRelease \
+            :resvg-mobile-coil:assembleRelease \
             :demo:assembleDebug
       - uses: actions/upload-artifact@v4
         with:
@@ -97,6 +106,7 @@ jobs:
           path: |
             android/resvg-mobile/build/outputs/aar/*.aar
             android/resvg-mobile-ui/build/outputs/aar/*.aar
+            android/resvg-mobile-coil/build/outputs/aar/*.aar
             NOTICE
             LICENSE
 
@@ -141,3 +151,105 @@ jobs:
             ios/ResvgMobileFFI-*.xcframework.zip
             ios/NOTICE
             ios/LICENSE
+
+  suite-android:
+    runs-on: ubuntu-latest
+    needs: rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r27c
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+      - name: Build full variant for emulator (x86_64)
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          VARIANT: full
+        run: |
+          chmod +x scripts/build-android-variants.sh scripts/fetch-test-suite.sh scripts/sync-suite-assets.sh
+          ./scripts/fetch-test-suite.sh
+          ./scripts/build-android-variants.sh
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Sync smoke assets
+        run: ./scripts/sync-suite-assets.sh smoke
+      - name: Android smoke suite (emulator)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          script: |
+            chmod +x scripts/run-android-suite.sh android/gradlew
+            # Assets already synced; skip re-fetch inside script by keeping vendor
+            MANIFEST=smoke SUITE_OUT_DIR=$GITHUB_WORKSPACE/artifacts/suite \
+              ./scripts/run-android-suite.sh
+        env:
+          SKIP_CARGO_NDK: "1"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: suite-android-smoke
+          path: artifacts/suite/android-results.jsonl
+
+  suite-ios:
+    runs-on: macos-14
+    needs: rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
+      - name: Fetch suite + build XCFramework
+        run: |
+          chmod +x scripts/fetch-test-suite.sh scripts/sync-suite-assets.sh scripts/run-ios-suite.sh rust/build-ios.sh
+          ./scripts/fetch-test-suite.sh
+          VARIANT=full ./rust/build-ios.sh
+      - name: iOS smoke suite (simulator)
+        run: |
+          mkdir -p artifacts/suite
+          MANIFEST=smoke SUITE_OUT_DIR=$GITHUB_WORKSPACE/artifacts/suite \
+            ./scripts/run-ios-suite.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: suite-ios-smoke
+          path: artifacts/suite/ios-results.jsonl
+
+  suite-compare:
+    runs-on: ubuntu-latest
+    needs: [suite-android, suite-ios]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: suite-android-smoke
+          path: artifacts/suite
+      - uses: actions/download-artifact@v4
+        with:
+          name: suite-ios-smoke
+          path: artifacts/suite
+      - name: Compare smoke results
+        run: |
+          chmod +x scripts/compare-suite-results.py
+          python3 scripts/compare-suite-results.py \
+            --golden rust/resvg-mobile/tests/suite/goldens/smoke.jsonl \
+            --android artifacts/suite/android-results.jsonl \
+            --ios artifacts/suite/ios-results.jsonl \
+            --fuzzy on-mismatch
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: suite-smoke-diffs
+          path: artifacts/suite/

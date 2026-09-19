@@ -10,6 +10,8 @@ use usvg::{Options as UsvgOptions, Tree};
 
 uniffi::include_scaffolding!("resvg_mobile");
 
+pub mod suite_contract;
+
 /// Hard cap on either output dimension.
 pub const MAX_DIMENSION: u32 = 8192;
 
@@ -367,7 +369,19 @@ pub fn render_with_font_config(
     options: RenderOptions,
     fonts: FontConfig,
 ) -> Result<RenderedImage, ResvgError> {
-    let tree = parse_tree(svg, &fonts, None)?;
+    render_with_resources(svg, options, fonts, None)
+}
+
+/// Render SVG bytes, resolving relative image hrefs from `resources_dir` when set
+/// (same role as the SVG parent directory in [`render_file`]).
+pub fn render_with_resources(
+    svg: &[u8],
+    options: RenderOptions,
+    fonts: FontConfig,
+    resources_dir: Option<String>,
+) -> Result<RenderedImage, ResvgError> {
+    let resources_dir = resources_dir.map(PathBuf::from);
+    let tree = parse_tree(svg, &fonts, resources_dir)?;
     render_tree(&tree, options)
 }
 
@@ -378,13 +392,12 @@ pub fn render_file(
     font_dirs: Vec<String>,
 ) -> Result<RenderedImage, ResvgError> {
     let svg = std::fs::read(path).map_err(|_| ResvgError::Parse)?;
-    let resources_dir = path.parent().map(|p| p.to_path_buf());
+    let resources_dir = path.parent().map(|p| p.to_string_lossy().into_owned());
     let fonts = FontConfig {
         dirs: font_dirs,
         ..FontConfig::default()
     };
-    let tree = parse_tree(&svg, &fonts, resources_dir)?;
-    render_tree(&tree, options)
+    render_with_resources(&svg, options, fonts, resources_dir)
 }
 
 /// Intrinsic size of an SVG file (with relative resource resolution from its parent directory).
