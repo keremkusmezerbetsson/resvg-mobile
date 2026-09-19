@@ -26,6 +26,8 @@ import kotlin.math.min
 /**
  * Coil 3 [Decoder] that rasterizes SVG with [Resvg].
  *
+ * Does not pass `resourcesDir`, so remote SVG cannot open local files (absolute hrefs included).
+ *
  * Register with:
  * ```
  * ImageLoader.Builder(context)

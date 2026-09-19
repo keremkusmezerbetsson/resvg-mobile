@@ -66,7 +66,7 @@ Vendor `tests/**/*.png` are **result goldens** from upstream, not inputs — the
 
 ### `resources_dir` / UniFFI
 
-Relative image hrefs resolve via UniFFI `render_with_resources(..., resources_dir?)`:
+Relative image hrefs resolve via UniFFI `render_with_resources(..., resources_dir?)`. Absolute paths and URLs are never loaded. With `resources_dir` unset, no local files are opened. With it set, paths must stay inside that directory or a `resources/` folder beside an ancestor (this suite’s `../../../resources/...` links):
 
 - **Android:** assets are extracted to disk; harness passes the SVG’s parent directory as `resources_dir` (so `../../../resources` from e.g. `suite/structure/image/` reaches the sibling `resources/` tree).
 - **iOS:** Fixtures keep the same layout; harness passes the SVG parent path the same way.

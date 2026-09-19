@@ -3,7 +3,7 @@
 //! Pixel format: **straight (non-premultiplied) RGBA**, row-major.
 //! Callers should convert on the platform side (`UIImage` / `Bitmap`).
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use tiny_skia::{Pixmap, Transform};
 use usvg::{Options as UsvgOptions, Tree};
@@ -18,6 +18,24 @@ pub const MAX_DIMENSION: u32 = 8192;
 /// Hard cap on total output pixels (`width * height`) to bound peak memory.
 /// At 4 bytes/pixel this is ~16 MiB for the pixmap alone.
 pub const MAX_PIXELS: u32 = 4_194_304; // 2048²
+
+/// Hard cap on SVG input bytes (including embedded data-URI images).
+pub const MAX_SVG_BYTES: usize = 8 * 1024 * 1024;
+
+/// Hard cap on a single external image file loaded via `resources_dir`.
+pub const MAX_RESOURCE_BYTES: u64 = 8 * 1024 * 1024;
+
+/// Hard cap on one in-memory font blob (`FontConfig.data`).
+pub const MAX_FONT_BLOB: usize = 12 * 1024 * 1024;
+
+/// Hard cap on the sum of `FontConfig.data` blobs.
+pub const MAX_FONT_DATA_TOTAL: usize = 32 * 1024 * 1024;
+
+/// Hard cap on `FontConfig.dirs` entries. Directories are trusted and must be absolute.
+pub const MAX_FONT_DIRS: usize = 16;
+
+/// How far above `resources_dir` a `resources/` sibling may sit (resvg-test-suite uses `../../../resources`).
+const MAX_RESOURCES_ANCESTORS: usize = 6;
 
 /// How to map the SVG into the requested pixel box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -325,13 +343,172 @@ fn usvg_options(_fonts: &FontConfig) -> UsvgOptions<'static> {
     UsvgOptions::default()
 }
 
+fn check_input_limits(svg: &[u8], fonts: &FontConfig) -> Result<(), ResvgError> {
+    if svg.len() > MAX_SVG_BYTES {
+        return Err(ResvgError::InvalidSize);
+    }
+    if fonts.dirs.len() > MAX_FONT_DIRS {
+        return Err(ResvgError::Fonts);
+    }
+    for dir in &fonts.dirs {
+        if !font_dir_allowed(dir) {
+            return Err(ResvgError::Fonts);
+        }
+    }
+    let mut total = 0usize;
+    for blob in &fonts.data {
+        if blob.len() > MAX_FONT_BLOB {
+            return Err(ResvgError::Fonts);
+        }
+        total = total.saturating_add(blob.len());
+        if total > MAX_FONT_DATA_TOTAL {
+            return Err(ResvgError::Fonts);
+        }
+    }
+    Ok(())
+}
+
+fn font_dir_allowed(dir: &str) -> bool {
+    if dir.is_empty() {
+        return false;
+    }
+    let path = Path::new(dir);
+    path.is_absolute() && !path.components().any(|c| matches!(c, Component::ParentDir))
+}
+
+fn href_scheme_forbidden(href: &str) -> bool {
+    let href = href.trim();
+    href.is_empty()
+        || href.len() > 4096
+        || href.contains('\0')
+        || href.contains("://")
+        || href.starts_with("//")
+        || href.to_ascii_lowercase().starts_with("file:")
+}
+
+fn lexical_normalize(path: &Path) -> Option<PathBuf> {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => out.push(prefix.as_os_str()),
+            Component::RootDir => out = PathBuf::from(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !out.pop() {
+                    return None;
+                }
+            }
+            Component::Normal(part) => out.push(part),
+        }
+    }
+    if out.as_os_str().is_empty() {
+        None
+    } else {
+        Some(out)
+    }
+}
+
+fn under_image_jail(path: &Path, resources_dir: &Path) -> bool {
+    let Some(base) = lexical_normalize(resources_dir) else {
+        return false;
+    };
+    if path.starts_with(&base) {
+        return true;
+    }
+    let mut current = base;
+    for _ in 0..MAX_RESOURCES_ANCESTORS {
+        let Some(parent) = current.parent() else {
+            break;
+        };
+        if parent.as_os_str().is_empty() {
+            break;
+        }
+        if path.starts_with(&parent.join("resources")) {
+            return true;
+        }
+        current = parent.to_path_buf();
+    }
+    false
+}
+
+fn canonical_under_image_jail(canon: &Path, resources_dir: &Path) -> bool {
+    if let Ok(base) = std::fs::canonicalize(resources_dir) {
+        if canon.starts_with(&base) {
+            return true;
+        }
+    }
+    let mut current = resources_dir.to_path_buf();
+    for _ in 0..MAX_RESOURCES_ANCESTORS {
+        let Some(parent) = current.parent() else {
+            break;
+        };
+        if let Ok(root) = std::fs::canonicalize(parent.join("resources")) {
+            if canon.starts_with(&root) {
+                return true;
+            }
+        }
+        current = parent.to_path_buf();
+    }
+    false
+}
+
+/// True when `href` may be opened as a local image.
+///
+/// `resources_dir == None` never opens files (blocks absolute paths used by usvg's default).
+/// Otherwise the normalized path must stay inside `resources_dir`, or inside a `resources/`
+/// directory next to an ancestor (test-suite `../../../resources/...` links).
+fn string_href_allowed(resources_dir: Option<&Path>, href: &str) -> bool {
+    let Some(resources_dir) = resources_dir else {
+        return false;
+    };
+    if href_scheme_forbidden(href) || Path::new(href).is_absolute() {
+        return false;
+    }
+    let Some(path) = lexical_normalize(&resources_dir.join(href)) else {
+        return false;
+    };
+    if !under_image_jail(&path, resources_dir) {
+        return false;
+    }
+    match std::fs::canonicalize(&path) {
+        Ok(canon) => canonical_under_image_jail(&canon, resources_dir),
+        // Missing files are not a read; the resolver no-ops.
+        Err(_) => true,
+    }
+}
+
+fn install_image_href_resolver(opt: &mut UsvgOptions) {
+    let inner = usvg::ImageHrefResolver::default_string_resolver();
+    opt.image_href_resolver = usvg::ImageHrefResolver {
+        resolve_data: usvg::ImageHrefResolver::default_data_resolver(),
+        resolve_string: Box::new(move |href, opts| {
+            let resources_dir = opts.resources_dir.as_deref();
+            if !string_href_allowed(resources_dir, href) {
+                return None;
+            }
+            if let Some(dir) = resources_dir {
+                if let Some(path) = lexical_normalize(&dir.join(href)) {
+                    if let Ok(meta) = std::fs::metadata(&path) {
+                        if meta.len() > MAX_RESOURCE_BYTES {
+                            return None;
+                        }
+                    }
+                }
+            }
+            inner(href, opts)
+        }),
+    };
+}
+
 fn parse_tree(
     svg: &[u8],
     fonts: &FontConfig,
     resources_dir: Option<PathBuf>,
 ) -> Result<Tree, ResvgError> {
+    check_input_limits(svg, fonts)?;
     let mut opt = usvg_options(fonts);
     opt.resources_dir = resources_dir;
+    install_image_href_resolver(&mut opt);
     Tree::from_data(svg, &opt).map_err(|_| ResvgError::Parse)
 }
 
@@ -372,8 +549,12 @@ pub fn render_with_font_config(
     render_with_resources(svg, options, fonts, None)
 }
 
-/// Render SVG bytes, resolving relative image hrefs from `resources_dir` when set
-/// (same role as the SVG parent directory in [`render_file`]).
+/// Render SVG bytes, resolving relative image hrefs from `resources_dir` when set.
+///
+/// Pass `None` for untrusted SVG (Coil, network bytes): no local files are opened, including
+/// absolute `href`s. When set, only relative paths inside that directory — or a `resources/`
+/// folder beside an ancestor — are loaded. Absolute paths, `file:` URLs, and `http(s):` URLs
+/// are ignored. `FontConfig.dirs` must be absolute app-owned directories; they are not jailed.
 pub fn render_with_resources(
     svg: &[u8],
     options: RenderOptions,
@@ -686,6 +867,67 @@ mod tests {
     fn parse_error_on_garbage() {
         let err = render(b"not svg", RenderOptions::default()).unwrap_err();
         assert_eq!(err, ResvgError::Parse);
+    }
+
+    #[test]
+    fn rejects_oversized_svg_bytes() {
+        let mut svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>".to_vec();
+        svg.resize(MAX_SVG_BYTES + 1, b' ');
+        let err = render(&svg, RenderOptions::default()).unwrap_err();
+        assert_eq!(err, ResvgError::InvalidSize);
+    }
+
+    #[test]
+    fn rejects_relative_font_dir() {
+        let err = render_with_fonts(
+            br#"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"/>"#,
+            RenderOptions::default(),
+            vec!["../fonts".into()],
+        )
+        .unwrap_err();
+        assert_eq!(err, ResvgError::Fonts);
+    }
+
+    #[test]
+    fn absolute_image_href_is_not_loaded_without_resources_dir() {
+        let svg = format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4">
+                <image width="4" height="4" href="{}"/>
+            </svg>"#,
+            "/tmp/resvg-mobile-should-not-read.png"
+        );
+        assert!(!string_href_allowed(None, "/tmp/resvg-mobile-should-not-read.png"));
+        render(svg.as_bytes(), RenderOptions::default()).expect("parse without file read");
+    }
+
+    #[test]
+    fn image_href_jail_allows_suite_resources_and_blocks_escape() {
+        let root = std::env::temp_dir().join(format!(
+            "resvg-mobile-jail-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let svg_dir = root.join("suite/structure/image");
+        let resources = root.join("resources");
+        let secret = root.join("secret");
+        std::fs::create_dir_all(&svg_dir).unwrap();
+        std::fs::create_dir_all(&resources).unwrap();
+        std::fs::create_dir_all(&secret).unwrap();
+        std::fs::write(resources.join("ok.png"), b"png").unwrap();
+        std::fs::write(secret.join("no.png"), b"png").unwrap();
+
+        assert!(string_href_allowed(
+            Some(&svg_dir),
+            "../../../resources/ok.png"
+        ));
+        assert!(!string_href_allowed(Some(&svg_dir), "../../../secret/no.png"));
+        assert!(!string_href_allowed(Some(&svg_dir), "/etc/passwd"));
+        assert!(!string_href_allowed(
+            Some(&svg_dir),
+            "https://example.invalid/a.png"
+        ));
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

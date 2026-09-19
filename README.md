@@ -169,9 +169,13 @@ intrinsic_size(svg) -> SizeF
 - `Contain` / `Cover` / `Fill` require **both** width and height.
 - `Intrinsic` uses SVG size when neither axis is set (or when both are set — both are ignored). Exactly one axis preserves aspect ratio.
 
-Limits: either edge ≤ **8192** px, and `width * height` ≤ **2048²** pixels.
+Limits: either edge ≤ **8192** px, and `width * height` ≤ **2048²** pixels. SVG input ≤ **8 MiB**. Each `FontConfig.data` blob ≤ **12 MiB** (32 MiB total). At most **16** font directories, each an absolute path with no `..`.
 
 UI wrappers additionally soft-cap each edge at **2048** px. Call render APIs off the main thread for large SVGs.
+
+### Untrusted SVG
+
+`render` / Coil do **not** open local files. Absolute image `href`s, `file:` URLs, and `http(s):` URLs are ignored (no network fetch). Pass `resources_dir` only for SVG you trust to read a folder: relative hrefs must stay inside that directory, or inside a `resources/` directory next to one of its ancestors (how the test suite resolves `../../../resources/...`). Symlinks that leave that jail are ignored. `FontConfig.dirs` is a separate trusted filesystem input — point it at app-owned font folders, not paths taken from the SVG.
 
 ## Fonts
 
