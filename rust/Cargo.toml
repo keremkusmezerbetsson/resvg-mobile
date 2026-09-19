@@ -14,5 +14,6 @@ readme = "../README.md"
 [profile.release]
 lto = true
 codegen-units = 1
-opt-level = "s"
+opt-level = "z"
 strip = "symbols"
+panic = "abort"

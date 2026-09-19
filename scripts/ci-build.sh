@@ -10,14 +10,14 @@ cargo test -p resvg-mobile
 
 echo "==> Regenerate bindings"
 mkdir -p "$ROOT/ios/Sources/ResvgMobile/Generated"
-cargo run -p resvg-mobile --bin uniffi-bindgen -- generate \
+cargo run -p resvg-mobile --features bindgen-cli --bin uniffi-bindgen -- generate \
   "$ROOT/rust/resvg-mobile/src/resvg_mobile.udl" \
   --language swift \
   --config "$ROOT/rust/resvg-mobile/uniffi.toml" \
   --out-dir "$ROOT/ios/Sources/ResvgMobile/Generated"
 
 mkdir -p "$ROOT/android/resvg-mobile/src/main/java"
-cargo run -p resvg-mobile --bin uniffi-bindgen -- generate \
+cargo run -p resvg-mobile --features bindgen-cli --bin uniffi-bindgen -- generate \
   "$ROOT/rust/resvg-mobile/src/resvg_mobile.udl" \
   --language kotlin \
   --config "$ROOT/rust/resvg-mobile/uniffi.toml" \

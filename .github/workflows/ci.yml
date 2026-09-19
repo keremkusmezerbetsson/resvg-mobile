@@ -26,11 +26,11 @@ jobs:
           ls -lh target/release/libuniffi_resvg_mobile.* || ls -lh target/release/*.rlib
       - name: Generate bindings and check drift
         run: |
-          cargo run -p resvg-mobile --bin uniffi-bindgen -- generate \
+          cargo run -p resvg-mobile --features bindgen-cli --bin uniffi-bindgen -- generate \
             resvg-mobile/src/resvg_mobile.udl --language kotlin \
             --config resvg-mobile/uniffi.toml \
             --out-dir /tmp/kt --no-format
-          cargo run -p resvg-mobile --bin uniffi-bindgen -- generate \
+          cargo run -p resvg-mobile --features bindgen-cli --bin uniffi-bindgen -- generate \
             resvg-mobile/src/resvg_mobile.udl --language swift \
             --config resvg-mobile/uniffi.toml \
             --out-dir /tmp/swift

@@ -192,7 +192,7 @@ CI (`.github/workflows/ci.yml`) runs Rust tests, builds Android AARs + demo, bui
 
 ## Binary size
 
-Release profile uses LTO, size opts, and strip. Expect multi‑MB native libs (resvg stack).
+Release profile uses `opt-level = "z"`, LTO, `panic = "abort"`, and symbol strip. UniFFI bindgen/`cli` is a host-only feature (`bindgen-cli`) so it is not linked into mobile libs. Expect multi‑MB native libs (resvg stack).
 
 ## License
 

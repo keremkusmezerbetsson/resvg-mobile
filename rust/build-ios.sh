@@ -35,7 +35,7 @@ lipo -create "$SIM_ARM" "$SIM_X64" -output "$SIM_UNIVERSAL"
 
 echo "==> Generating Swift bindings"
 mkdir -p "$GEN_DIR"
-cargo run -p resvg-mobile --bin uniffi-bindgen -- generate \
+cargo run -p resvg-mobile --features bindgen-cli --bin uniffi-bindgen -- generate \
   "$RUST_DIR/resvg-mobile/src/resvg_mobile.udl" \
   --language swift \
   --out-dir "$GEN_DIR"
